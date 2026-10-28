@@ -1,0 +1,11 @@
+{
+  "sha256": "b00670dce369671f79be77dd62aa6d14be42c9622aace5d5a74c1de7a6435cce",
+  "source": "SYNTHETIC_GENERATED_EXAMPLE_NOT_BINANCE",
+  "count": 360,
+  "market": "spot",
+  "symbol": "BTCUSDT",
+  "interval": "1m",
+  "first_open_ms": 1735689600000,
+  "last_open_ms": 1735711140000,
+  "generated_ms": 1793134337889
+}

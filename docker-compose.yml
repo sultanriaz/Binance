@@ -1,0 +1,348 @@
+name: aegistrade-module2
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_only}
+      POSTGRES_DB: trader
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./infrastructure/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U trader -d trader
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+    - internal
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command:
+    - redis-server
+    - --save
+    - '60'
+    - '1'
+    - --appendonly
+    - 'yes'
+    volumes:
+    - redis_data:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+    - internal
+    restart: unless-stopped
+  nats:
+    image: nats:2.10-alpine
+    command:
+    - -js
+    - -sd
+    - /data
+    - -m
+    - '8222'
+    volumes:
+    - nats_data:/data
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - /dev/null
+      - http://127.0.0.1:8222/healthz
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+    - internal
+    restart: unless-stopped
+  migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local_dev_only}
+    volumes:
+    - ./infrastructure/migrations:/migrations:ro
+    command:
+    - sh
+    - -ec
+    - psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/001_init.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/002_paper.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/003_exchange.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/004_intelligence.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/005_operations.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/006_live.sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - internal
+    restart: 'no'
+  gateway:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: ${JWT_SECRET:?Set a JWT secret}
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+    ports:
+    - 127.0.0.1:8000:8000
+    volumes:
+    - ./web:/app/web:ro
+    - ./data:/app/data:ro
+    - ./scripts:/app/scripts:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - uvicorn
+    - trader.api:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    security_opt:
+    - no-new-privileges:true
+  paper-worker:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.paper.worker
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  research-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.research
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.intelligence.worker
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  exchange-worker:
+    profiles:
+    - sandbox
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+      ENABLE_TESTNET_EXECUTION: ${ENABLE_TESTNET_EXECUTION:-false}
+      TESTNET_CONFIRM: ${TESTNET_CONFIRM:-NOT_CONFIRMED}
+      TESTNET_SYMBOLS: ${TESTNET_SYMBOLS:-BTCUSDT,ETHUSDT}
+      TESTNET_MAX_ORDER_USDT: ${TESTNET_MAX_ORDER_USDT:-50}
+      TESTNET_MAX_DAILY_ORDERS: ${TESTNET_MAX_DAILY_ORDERS:-20}
+      TESTNET_MAX_LEVERAGE: ${TESTNET_MAX_LEVERAGE:-2}
+      EXCHANGE_POLL_SECONDS: ${EXCHANGE_POLL_SECONDS:-5}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.exchange.worker
+    env_file:
+    - path: .env.exchange
+      required: false
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  collector:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.collector
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  outbox:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      ENABLE_LIVE_TRADING: 'false'
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      BINANCE_SPOT_REST: ${BINANCE_SPOT_REST:-https://api.binance.com}
+      BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://fapi.binance.com}
+      BINANCE_SPOT_WSS: ${BINANCE_SPOT_WSS:-wss://stream.binance.com:9443}
+      BINANCE_FUTURES_WSS: ${BINANCE_FUTURES_WSS:-wss://fstream.binance.com/market}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.outbox
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+    - ./infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - ./infrastructure/alerts/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+    - 127.0.0.1:9090:9090
+    depends_on:
+    - gateway
+    networks:
+    - internal
+    restart: unless-stopped
+  operations-worker:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/trader
+      JWT_SECRET: worker-unused-not-a-valid-operator-session-key-00000000
+      ENABLE_LIVE_TRADING: 'false'
+      MARKETS: ${MARKETS:-spot,futures}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-development}
+      TRUSTED_TLS_PROXY: ${TRUSTED_TLS_PROXY:-false}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - internal
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - trader.operations.worker
+    security_opt:
+    - no-new-privileges:true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+volumes:
+  postgres_data: null
+  redis_data: null
+  nats_data: null
+networks:
+  internal:
+    driver: bridge

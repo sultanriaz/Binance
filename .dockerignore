@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.venv
+.pytest_cache
+__pycache__
+*.egg-info
+secrets
+
+.env.staging
+backups
+.env.*
+*.pem
+*.key
+*.p12
+.env.live
+.env.production

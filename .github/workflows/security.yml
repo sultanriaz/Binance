@@ -1,0 +1,23 @@
+name: Dependency security and secret boundary audit
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '19 4 * * 1'
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies and scanner
+        run: python -m pip install -e '.[dev,research]' pip-audit
+      - name: Audit installed Python dependencies
+        run: python -m pip_audit --progress-spinner off
+      - name: Secret boundaries and fault matrix
+        run: |
+          python -m pytest -q tests/test_operations_module5.py
+          PYTHONPATH=src python scripts/ops/fault_drill.py

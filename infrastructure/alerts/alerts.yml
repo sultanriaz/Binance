@@ -1,0 +1,50 @@
+groups:
+  - name: aegistrade-critical
+    rules:
+      - alert: TradingAPIUnavailable
+        expr: up{job="aegistrade-gateway"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Trading operator API unreachable"
+      - alert: DatabaseUnavailable
+        expr: trader_operations_database_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Operational PostgreSQL queries failed"
+      - alert: UnknownExchangeWrite
+        expr: trader_operations_unknown_exchange_orders > 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: "Unresolved uncertain sandbox order; no new trades should be authorized"
+      - alert: UnresolvedCriticalIncident
+        expr: trader_operations_open_incidents > 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "An unresolved critical operational or exchange incident exists"
+      - alert: MarketDataLost
+        expr: trader_market_stream_connected == 0
+        for: 45s
+        labels: {severity: critical}
+        annotations:
+          summary: "Binance market-data stream disconnected"
+      - alert: ShadowEvidenceNotReady
+        expr: trader_operations_readiness_no_go == 1
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Shadow gate NO_GO; live release approval remains prohibited"
+
+      - alert: LiveUnknownOrder
+        expr: trader_live_unknown_order_intents > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations: {summary: 'LIVE exchange order has unknown/uncertain state; halt and reconcile'}
+      - alert: LiveIncident
+        expr: trader_live_open_incidents > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations: {summary: 'Unresolved LIVE execution incident requires operator'}

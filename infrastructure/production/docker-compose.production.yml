@@ -1,0 +1,116 @@
+# Run with: docker compose -f docker-compose.yml -f infrastructure/production/docker-compose.production.yml --env-file .env.production --profile live up -d --build
+# Live service is started ONLY with --profile live and exact runtime authorization.
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    environment:
+      PRODUCTION_HOST: ${PRODUCTION_HOST:?Set production domain}
+      ACME_EMAIL: ${ACME_EMAIL:?Required}
+    volumes:
+      - ./infrastructure/production/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports: ["80:80", "443:443", "443:443/udp"]
+    depends_on: [gateway]
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+  role-provisioner:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:?Required}@postgres:5432/trader
+      ROLE_PASSWORD_GATEWAY: ${ROLE_PASSWORD_GATEWAY:?Required}
+      ROLE_PASSWORD_COLLECTOR: ${ROLE_PASSWORD_COLLECTOR:?Required}
+      ROLE_PASSWORD_OUTBOX: ${ROLE_PASSWORD_OUTBOX:?Required}
+      ROLE_PASSWORD_PAPER: ${ROLE_PASSWORD_PAPER:?Required}
+      ROLE_PASSWORD_RESEARCH: ${ROLE_PASSWORD_RESEARCH:?Required}
+      ROLE_PASSWORD_EXCHANGE: ${ROLE_PASSWORD_EXCHANGE:?Required}
+      ROLE_PASSWORD_OPERATIONS: ${ROLE_PASSWORD_OPERATIONS:?Required}
+      ROLE_PASSWORD_LIVE: ${ROLE_PASSWORD_LIVE:?Required}
+    volumes:
+      - ./scripts/ops/provision_roles.py:/app/provision_roles.py:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [internal]
+    command: ["python","/app/provision_roles.py"]
+    restart: "no"
+  gateway:
+    environment:
+      DATABASE_URL: postgresql://trader_gateway:${ROLE_PASSWORD_GATEWAY:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+      LIVE_CONTROL_ENABLED: "true"
+      STAGING_DB_ROLE: trader_gateway
+      PRODUCTION_HOST: ${PRODUCTION_HOST:?Required}
+      TRUSTED_TLS_PROXY: "true"
+      ENABLE_LIVE_TRADING: "false"
+      ENABLE_TESTNET_EXECUTION: "false"
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  collector:
+    environment:
+      DATABASE_URL: postgresql://trader_collector:${ROLE_PASSWORD_COLLECTOR:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  paper-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_paper:${ROLE_PASSWORD_PAPER:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  research-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_research:${ROLE_PASSWORD_RESEARCH:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  exchange-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_exchange:${ROLE_PASSWORD_EXCHANGE:?Required}@postgres:5432/trader
+      ENABLE_TESTNET_EXECUTION: "false"
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  operations-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_operations:${ROLE_PASSWORD_OPERATIONS:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  outbox:
+    environment:
+      DATABASE_URL: postgresql://trader_outbox:${ROLE_PASSWORD_OUTBOX:?Required}@postgres:5432/trader
+      DEPLOYMENT_MODE: production
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  live-worker:
+    profiles: [live]
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader_live:${ROLE_PASSWORD_LIVE:?Required}@postgres:5432/trader
+      JWT_SECRET: worker-only-not-an-operator-token-000000000000000000000
+      ENABLE_LIVE_TRADING: "false"
+      DEPLOYMENT_MODE: production
+      LIVE_TRADING_ENABLED: ${LIVE_TRADING_ENABLED:-false}
+      LIVE_TRADING_CONFIRM: ${LIVE_TRADING_CONFIRM:-NOT_AUTHORIZED}
+      LIVE_FUTURES_ELIGIBILITY_CONFIRMED: ${LIVE_FUTURES_ELIGIBILITY_CONFIRMED:-false}
+      LIVE_SYMBOLS: ${LIVE_SYMBOLS:-BTCUSDT}
+      LIVE_MAX_ORDER_USDT: ${LIVE_MAX_ORDER_USDT:-25}
+      LIVE_MAX_DAILY_ORDERS: ${LIVE_MAX_DAILY_ORDERS:-5}
+      LIVE_MAX_DAILY_LOSS_PCT: ${LIVE_MAX_DAILY_LOSS_PCT:-1}
+      LIVE_MAX_LEVERAGE: ${LIVE_MAX_LEVERAGE:-2}
+      LIVE_POLL_SECONDS: ${LIVE_POLL_SECONDS:-5}
+    env_file:
+      - path: .env.live
+        required: true
+    command: ["python","-m","trader.live.worker"]
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+    networks: [internal]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+volumes:
+  caddy_data:
+  caddy_config:

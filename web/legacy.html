@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AegisTrade | Market, Paper & Sandbox</title>
+<style>
+:root{color-scheme:dark;--bg:#0d111b;--panel:#171e2b;--line:#2b374d;--fg:#e9f0fb;--muted:#a2b1c9;--accent:#70a8ff;--success:#67dba1;--warn:#ffcb78}*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);font:15px system-ui,-apple-system,sans-serif;margin:0}main{width:min(1160px,94%);margin:auto;padding:28px 0}header{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}h1{font-size:25px;margin:4px 0}h2{font-size:18px;margin:0 0 12px}p{color:var(--muted);line-height:1.5}.tag{background:#263550;border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;min-width:0}.full{grid-column:1/-1}input,button,select{border-radius:8px;padding:12px;background:#0f1724;color:white;border:1px solid var(--line);font:inherit}button{background:var(--accent);color:#081422;cursor:pointer;font-weight:650}button:hover{filter:brightness(1.1)}form{display:flex;flex-wrap:wrap;gap:10px}form input,form select{min-width:120px;flex:1}.small-note{color:var(--muted);font-size:12px}.stack{display:grid;gap:8px}.paper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.paper-grid input,.paper-grid select{width:100%}.paper-grid button{grid-column:1/-1}.status-box{padding:10px;border-radius:8px;background:#0e1624;white-space:pre-wrap;overflow-wrap:anywhere}.paper-grid label{display:grid;gap:3px;font-size:12px;color:var(--muted)}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:11px 8px}th{color:var(--muted);font-weight:500}#notice{color:var(--warn)}.muted{color:var(--muted)}.healthy{color:var(--success)}.bad{color:var(--warn)}.hidden{display:none}.tiny{font-size:12px}section{overflow-x:auto}footer{margin:24px 0;color:var(--muted);font-size:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}.full{grid-column:auto}form{flex-direction:column}}
+</style></head><body><main>
+<header><div><div class="tiny muted">MARKET · PAPER · BINANCE SANDBOX · D0–D3</div><h1>AegisTrade Operator Terminal</h1></div><span class="tag">PAPER + TESTNET · LIVE DISABLED</span></header>
+<p>Observe public markets, run simulated strategies, and supervise separately enabled Spot Testnet / Futures Demo orders. These sandbox orders use exchange-provided test balances. Production trading is intentionally impossible.</p>
+<div id="login" class="panel"><h2>Operator sign in</h2><p>Use the admin you enrolled from the terminal. Password and authenticator code are both required.</p>
+<form id="loginForm"><input id="username" autocomplete="username" placeholder="Username" required><input id="password" type="password" autocomplete="current-password" placeholder="Password" required><input id="otp" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="6-digit MFA" required><button type="submit">Sign in</button></form><p id="notice" role="alert"></p></div>
+<div id="dashboard" class="grid hidden"><section class="panel"><h2>Stream health</h2><div id="streamStatus" class="muted">Loading...</div><div id="qualityStatus" class="tiny muted"></div></section>
+<section class="panel"><h2>Operational controls</h2><p>Live exchange trading: <strong class="bad">Disabled</strong></p><p class="tiny">Virtual accounts and optional Binance TEST accounts only. No production credentials or production order endpoints.</p><button id="logout" type="button">End session</button></section>
+<section class="panel full"><h2>Latest market events</h2><div id="updated" class="tiny muted"></div><table><thead><tr><th>Market</th><th>Symbol</th><th>Type</th><th>Summary</th><th>Age</th><th>Status</th></tr></thead><tbody id="marketTable"></tbody></table></section>
+<section class="panel full"><h2>Instrument rules</h2><p class="tiny">Refreshed from Binance REST exchangeInfo. Filters are persisted in PostgreSQL.</p><table><thead><tr><th>Market</th><th>Symbol</th><th>Pair</th><th>Status</th><th>Refreshed</th></tr></thead><tbody id="instrumentTable"></tbody></table></section>
+<section id="paperPanel" class="panel full"><h2>Paper trading accounts</h2>
+<p class="small-note">Administrator-only operations. Virtual USDT and simulated fills; no real orders.</p>
+<form id="createPaper"><input id="paperName" placeholder="Account name" value="My paper account" required>
+<input id="paperCash" type="number" min="100" max="1000000" step="100" value="10000" required>
+<button type="submit">Create virtual account</button></form>
+<div style="margin:12px 0"><label>Selected account <select id="paperAccount"><option value="">Select account</option></select></label></div>
+<div id="paperStatus" class="status-box muted">Create an account to begin.</div>
+<table><thead><tr><th>Market</th><th>Symbol</th><th>Side</th><th>Type</th><th>Status</th><th>Filled</th></tr></thead><tbody id="paperOrders"></tbody></table>
+<div style="display:flex;gap:8px;margin-top:10px"><button type="button" id="paperPause">Pause entries</button><button type="button" id="paperResume">Resume entries</button></div>
+</section>
+<section id="paperOrdersPanel" class="panel"><h2>Simulated order ticket</h2>
+<div class="small-note">Requires fresh live Binance best bid/ask. Market order remainder is cancelled if simulated available liquidity is insufficient.</div>
+<form id="paperOrder" class="paper-grid" style="margin-top:12px">
+<label>Market<select id="orderMarket"><option value="spot">Spot</option><option value="futures">USDⓈ-M Futures</option></select></label>
+<label>Symbol<select id="orderSymbol"><option value="BTCUSDT">BTCUSDT</option><option value="ETHUSDT">ETHUSDT</option></select></label>
+<label>Side<select id="orderSide"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></label>
+<label>Order type<select id="orderType"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option><option value="STOP_MARKET">STOP_MARKET</option><option value="TAKE_PROFIT_MARKET">TAKE_PROFIT_MARKET</option></select></label>
+<label>Base quantity<input id="orderQty" type="text" value="0.001" required></label>
+<label>Leverage<input id="orderLev" type="number" min="1" max="3" value="1" required></label>
+<label>Limit price (optional)<input id="orderLimit" type="text" placeholder="Only LIMIT"></label>
+<label>Trigger price (optional)<input id="orderTrigger" type="text" placeholder="STOP / TAKE PROFIT"></label>
+<label>OCO group (optional)<input id="orderOco" type="text" placeholder="Protective pair ID"></label>
+<label>Reduce-only<select id="orderReduce"><option value="false">No</option><option value="true">Yes</option></select></label>
+<button type="submit">Submit PAPER order</button></form><p id="paperOrderNotice" class="small-note" role="status"></p></section>
+<section id="paperResearchPanel" class="panel"><h2>Baseline automation and backtests</h2>
+<p class="small-note">Strategies default disabled. The background paper worker evaluates only closed 1-minute candles with fresh quotes.</p>
+<form id="paperStrategy" class="paper-grid"><label>Market<select id="strategyMarket"><option value="spot">Spot</option><option value="futures">Futures</option></select></label>
+<label>Symbol<select id="strategySymbol"><option>BTCUSDT</option><option>ETHUSDT</option></select></label>
+<label>Fast SMA<input id="strategyFast" type="number" value="10" min="2" max="100"></label>
+<label>Slow SMA<input id="strategySlow" type="number" value="30" min="3" max="300"></label>
+<label>Allocation<input id="strategyAllocation" type="text" value="0.10"></label>
+<label>Enable now?<select id="strategyEnabled"><option value="false">No (default)</option><option value="true">Yes</option></select></label>
+<button type="submit">Create SMA paper strategy</button></form><div id="paperStrategyNotice" class="small-note"></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+<form id="paperBacktest" class="paper-grid"><label>Market<select id="backtestMarket"><option value="spot">Spot</option><option value="futures">Futures</option></select></label>
+<label>Symbol<select id="backtestSymbol"><option>BTCUSDT</option><option>ETHUSDT</option></select></label>
+<label>Imported bars<input id="backtestBars" type="number" min="33" max="5000" value="500"></label>
+<label>Fast SMA<input id="backtestFast" type="number" value="10" min="2" max="100"></label>
+<label>Slow SMA<input id="backtestSlow" type="number" value="30" min="3" max="300"></label>
+<label>Allocation<input id="backtestAllocation" value="0.10"></label>
+<button type="submit">Run historical backtest</button></form>
+<p id="backtestNotice" class="small-note" role="status">Import candle history using the P09 CLI first.</p></section>
+<section class="panel full" id="testnetPanel"><h2>Binance test environments · P15–P19</h2>
+<p class="small-note">ADMIN ONLY. The gateway queues order intents; a separately configured worker makes exchange TEST orders. Controls are deliberately disabled by default. NEVER supply live credentials. No funds withdrawal or production orders are supported.</p>
+<div id="testnetStatus" class="status-box">Sign in to view sandbox capability.</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+<label>Environment <select id="testnetAccount"><option value="spot-testnet">Spot Testnet</option><option value="futures-demo">USDⓈ-M Futures Demo</option></select></label>
+<button type="button" id="testnetArm">Arm sandbox account</button>
+<button type="button" id="testnetHalt">Disarm (no new entries)</button>
+<button type="button" id="testnetRefresh">Refresh status</button></div>
+<h2>Sandbox order ticket</h2><p class="small-note">Sandbox entries are bounded by exchange filters, operator approval, notional caps and configured leverage. Futures conditional stops require an existing position and reduce_only=true. Do not mistake an acknowledgement for a fill.</p>
+<form id="testnetOrderForm" class="paper-grid">
+<label>Client ID <input id="testnetClientID" required maxlength="36" placeholder="Unique ID (8–36 characters)"></label>
+<label>Symbol <select id="testnetSymbol"><option>BTCUSDT</option><option>ETHUSDT</option></select></label>
+<label>Side <select id="testnetSide"><option>BUY</option><option>SELL</option></select></label>
+<label>Type <select id="testnetType"><option>MARKET</option><option>LIMIT</option><option>STOP_MARKET</option><option>TAKE_PROFIT_MARKET</option><option>STOP_LOSS_LIMIT</option><option>TAKE_PROFIT_LIMIT</option></select></label>
+<label>Quantity <input id="testnetQty" value="0.001" required></label>
+<label>Price <input id="testnetPrice" placeholder="LIMIT / spot conditional limit"></label>
+<label>Trigger price <input id="testnetTrigger" placeholder="Conditional only"></label>
+<label>Reduce only <select id="testnetReduce"><option value="false">No</option><option value="true">Yes</option></select></label>
+<button type="submit">Queue TESTNET order (requires approval)</button></form>
+<div id="testnetNotice" class="status-box" style="margin:10px 0">Not yet submitted.</div>
+<h2>Exchange orders</h2><table><thead><tr><th>Client ID</th><th>Symbol</th><th>Order type</th><th>Status</th><th>Action</th></tr></thead><tbody id="testnetOrders"></tbody></table>
+<h2 style="margin-top:16px">Open reconciliation incidents</h2>
+<div id="testnetIncidents" class="status-box">No data.</div>
+</section>
+</div>
+<footer>Public Binance prices can be stale or incomplete. All orders shown here are fictional virtual executions. This is not a live-money trading service or financial advice.</footer></main>
+<script>
+let token=null,interval=null,role=null;
+const $=s=>document.querySelector(s);
+const cell=(row,value)=>{const td=document.createElement('td');td.textContent=String(value??'—');row.appendChild(td);return td;};
+async function api(path,options={}){const response=await fetch(path,{...options,headers:{...(options.headers||{}),...(token?{Authorization:`Bearer ${token}`}:{})}});if(!response.ok)throw new Error(`${response.status}: ${await response.text()}`);return response.json();}
+async function login(e){e.preventDefault();$('#notice').textContent='Signing in…';try{const result=await api('/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#username').value,password:$('#password').value,totp:$('#otp').value})});token=result.access_token;role=result.role;$('#paperPanel').classList.toggle('hidden',role!=='ADMIN');$('#paperOrdersPanel').classList.toggle('hidden',role!=='ADMIN');$('#paperResearchPanel').classList.toggle('hidden',role!=='ADMIN');$('#testnetPanel').classList.toggle('hidden',role!=='ADMIN');$('#password').value='';$('#otp').value='';$('#login').classList.add('hidden');$('#dashboard').classList.remove('hidden');$('#notice').textContent='';await update();if(role==='ADMIN'){await updatePaper();await updateTestnet();}interval=setInterval(()=>{update();if(role==='ADMIN'){updatePaper();updateTestnet();}},5000);}catch(err){$('#notice').textContent='Login failed. Check credentials and authenticator code, or try later.';}}
+function renderTable(target,rows,cols){const tbody=$(target);tbody.replaceChildren();for(const v of rows){const tr=document.createElement('tr');for(const item of cols(v))cell(tr,item);tbody.appendChild(tr);}if(!rows.length){const tr=document.createElement('tr');const td=cell(tr,'No records yet. Check collector and Binance connectivity.');td.colSpan=cols({}).length;tbody.appendChild(tr);}}
+async function update(){if(!token)return;try{const [stream,latest,instruments,quality]=await Promise.all([api('/v1/market/streams'),api('/v1/market/latest'),api('/v1/market/instruments'),api('/v1/market/data-quality')]);$('#streamStatus').replaceChildren();for(const s of stream.streams){const p=document.createElement('p');p.textContent=`${s.market.toUpperCase()}: ${s.healthy?'healthy':'disconnected / stale'} · reconnects ${s.reconnects}`;p.className=s.healthy?'healthy':'bad';$('#streamStatus').appendChild(p);}if(!stream.streams.length)$('#streamStatus').textContent='No stream status reported.';$('#qualityStatus').textContent=quality.unresolved_gaps.length?`${quality.unresolved_gaps.length} unresolved aggregate-trade data gaps. Research history is incomplete.`:'No known agg-trade sequence gaps (not proof of completeness).';$('#qualityStatus').className=quality.unresolved_gaps.length?'tiny bad':'tiny muted';
+renderTable('#marketTable',latest.events,v=>[v.market,v.symbol,v.event_type,v.event_type==='mark_price'?(v.payload?.mark_price):v.event_type==='kline'?(v.payload?.close):v.event_type==='agg_trade'?(v.payload?.price):v.payload?.best_bid,Math.round((v.age_ms||0)/1000)+'s',v.stale?'STALE':'OK']);
+renderTable('#instrumentTable',instruments.instruments,v=>[v.market,v.symbol,`${v.base_asset||''}/${v.quote_asset||''}`,v.status,v.refreshed_at]);$('#updated').textContent='Updated '+new Date().toLocaleTimeString();}catch(err){if(String(err).includes('401')){logout();return;}$('#updated').textContent='Could not update data: '+err.message;}}
+function logout(){token=null;role=null;clearInterval(interval);$('#dashboard').classList.add('hidden');$('#login').classList.remove('hidden');$('#notice').textContent='Session ended.';}
+
+async function updatePaper(){
+ if(!token||role!=='ADMIN')return;
+ try{
+  const data=await api('/v1/paper/accounts');
+  const select=$('#paperAccount');const chosen=select.value;
+  select.replaceChildren();const opt=document.createElement('option');opt.value='';opt.textContent='Select account';select.appendChild(opt);
+  for(const a of data.accounts){const el=document.createElement('option');el.value=a.id;el.textContent=`${a.name} · ${a.id.slice(0,8)}`;select.appendChild(el);}
+  if(data.accounts.some(a=>a.id===chosen))select.value=chosen;
+  else if(data.accounts.length)select.value=data.accounts[0].id;
+  if(!select.value){$('#paperStatus').textContent='Create a virtual account to begin.';return;}
+  const record=await api('/v1/paper/accounts/'+select.value);const state=record.account;
+  $('#paperStatus').textContent=`Account: ${select.value}
+Cash: ${Number(state.cash).toFixed(2)} virtual USDT | Equity: ${Number(record.equity).toFixed(2)} | Gross exposure: ${Number(record.gross_exposure).toFixed(2)}
+Realized PnL (gross): ${Number(state.realized_pnl).toFixed(2)} | Fees: ${Number(state.fees).toFixed(4)} | Funding: ${Number(state.funding).toFixed(4)} | Paused: ${state.paused}
+Spot: ${JSON.stringify(state.spot)}
+Futures: ${JSON.stringify(state.futures)}`;
+  renderTable('#paperOrders',state.orders.slice(-8).reverse(),v=>[v.market,v.symbol,v.side,v.type,v.status,v.filled]);
+ }catch(err){$('#paperStatus').textContent='Paper data unavailable: '+err.message;}
+}
+function notify(id,err,prefix=''){const e=$(id);e.textContent=prefix+(err?.message||String(err));}
+$('#paperAccount').addEventListener('change',updatePaper);
+$('#createPaper').addEventListener('submit',async e=>{e.preventDefault();try{const result=await api('/v1/paper/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('#paperName').value,initial_usdt:$('#paperCash').value})});await updatePaper();$('#paperAccount').value=result.account.account_id;await updatePaper();}catch(err){notify('#paperStatus',err);}});
+$('#paperOrder').addEventListener('submit',async e=>{e.preventDefault();const id=$('#paperAccount').value;if(!id)return notify('#paperOrderNotice','Select a virtual account first.');
+ const d={market:$('#orderMarket').value,symbol:$('#orderSymbol').value,side:$('#orderSide').value,quantity:$('#orderQty').value,type:$('#orderType').value,leverage:Number($('#orderLev').value),reduce_only:$('#orderReduce').value==='true',client_id:crypto.randomUUID()};
+ if($('#orderLimit').value.trim())d.limit_price=$('#orderLimit').value.trim();if($('#orderTrigger').value.trim())d.trigger_price=$('#orderTrigger').value.trim();if($('#orderOco').value.trim())d.oco_group=$('#orderOco').value.trim();
+ try{const result=await api(`/v1/paper/accounts/${id}/orders`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});$('#paperOrderNotice').textContent='PAPER order '+result.order.status+' · '+result.order.id;await updatePaper();}catch(err){notify('#paperOrderNotice',err);}});
+for(const [el,path] of [['#paperPause','pause'],['#paperResume','resume']])$(el).addEventListener('click',async()=>{const id=$('#paperAccount').value;if(!id)return;try{await api(`/v1/paper/accounts/${id}/${path}`,{method:'POST'});await updatePaper();}catch(err){notify('#paperStatus',err);}});
+$('#paperStrategy').addEventListener('submit',async e=>{e.preventDefault();const id=$('#paperAccount').value;if(!id)return notify('#paperStrategyNotice','Select account first.');
+ const data={account_id:id,market:$('#strategyMarket').value,symbol:$('#strategySymbol').value,fast:Number($('#strategyFast').value),slow:Number($('#strategySlow').value),allocation:$('#strategyAllocation').value,enabled:$('#strategyEnabled').value==='true'};
+ try{const result=await api('/v1/paper/strategies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});$('#paperStrategyNotice').textContent=`Paper strategy created ${result.id}; enabled: ${result.enabled}.`; }catch(err){notify('#paperStrategyNotice',err);}});
+$('#paperBacktest').addEventListener('submit',async e=>{e.preventDefault();$('#backtestNotice').textContent='Running deterministic historical backtest…';
+ const data={market:$('#backtestMarket').value,symbol:$('#backtestSymbol').value,bars:Number($('#backtestBars').value),fast:Number($('#backtestFast').value),slow:Number($('#backtestSlow').value),allocation:$('#backtestAllocation').value};
+ try{const r=await api('/v1/paper/backtests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const s=r.summary;$('#backtestNotice').textContent=`Run ${r.run_id}
+Return: ${(Number(s.total_return_fraction)*100).toFixed(3)}% | Max drawdown: ${(Number(s.max_drawdown_fraction)*100).toFixed(3)}% | Fees: ${s.fee_total} USDT | Fills: ${s.fills}
+These results are a basic simulation, not a performance prediction.`;}catch(err){notify('#backtestNotice',err);}});
+
+
+async function updateTestnet(){if(!token||role!=='ADMIN')return;try{
+ const [caps,acc]=await Promise.all([api('/v1/testnet/capabilities'),api('/v1/testnet/accounts')]);
+ const code=$('#testnetAccount').value;
+ const a=acc.accounts.find(x=>x.code===code);
+ $('#testnetStatus').textContent=`Mode: ${caps.enabled?'SANDBOX WORKER ENABLED':'DISABLED'} | ${code}: ${caps.accounts[code]?'TESTNET MODE CONFIGURED':'TESTNET MODE DISABLED'} | State: ${a?.state||'UNREGISTERED'} | Operator armed: ${a?.operator_enabled||false} | Last reconcile: ${a?.last_reconciled_at||'never'} | Stream: ${a?.last_stream_at||'not observed'} | Last error: ${a?.last_error||'none'}
+Maximum sandbox notional: ${caps.max_order_usdt} USDT | Daily orders: ${caps.max_daily_orders} | Leverage limit: ${caps.max_leverage}`;
+ const result=await api(`/v1/testnet/accounts/${code}/orders`);
+ const tbody=$('#testnetOrders');tbody.replaceChildren();
+ for(const o of result.orders){const tr=document.createElement('tr');for(const item of [o.client_order_id,o.payload.symbol,o.payload.type,o.status])cell(tr,item);
+ const c=document.createElement('td');if(['NEW','PARTIALLY_FILLED','ACKNOWLEDGED'].includes(o.status)){
+ const btn=document.createElement('button');btn.textContent='Request cancel';btn.type='button';btn.onclick=async()=>{try{await api(`/v1/testnet/accounts/${code}/orders/${o.id}/cancel`,{method:'POST'});await updateTestnet();}catch(e){notify('#testnetNotice',e);}};c.append(btn);}tr.append(c);tbody.append(tr);}
+ if(!result.orders.length)$('#testnetOrders').textContent='No sandbox order intents yet.';
+ $('#testnetIncidents').replaceChildren();if(!result.incidents.length)$('#testnetIncidents').textContent='No open incidents';
+ for(const issue of result.incidents){const p=document.createElement('p');p.textContent=`#${issue.id} ${issue.category}: ${JSON.stringify(issue.detail)}`;
+ const b=document.createElement('button');b.textContent='Acknowledge after exchange review';b.type='button';b.onclick=async()=>{if(!confirm('Have you independently reviewed the actual Binance test account and resolved this incident?'))return;try{await api(`/v1/testnet/accounts/${code}/incidents/${issue.id}/acknowledge`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acknowledgement:'I_REVIEWED_EXCHANGE_ACCOUNT_STATE'})});await updateTestnet();}catch(e){notify('#testnetNotice',e);}};$('#testnetIncidents').append(p,b);}
+ }catch(err){notify('#testnetStatus',err);}}
+$('#testnetAccount').addEventListener('change',updateTestnet);
+$('#testnetRefresh').addEventListener('click',updateTestnet);
+for(const [button,action] of [['#testnetArm','arm'],['#testnetHalt','halt']])$(button).addEventListener('click',async()=>{const code=$('#testnetAccount').value;if(action==='arm'&&!confirm('Arm '+code+' for real TEST ENVIRONMENT orders with virtual exchange funds?'))return;try{await api(`/v1/testnet/accounts/${code}/${action}`,{method:'POST'});await updateTestnet();}catch(err){notify('#testnetNotice',err);}});
+$('#testnetClientID').value='at-'+crypto.randomUUID().slice(0,22);
+$('#testnetOrderForm').addEventListener('submit',async e=>{e.preventDefault();const data={account:$('#testnetAccount').value,client_order_id:$('#testnetClientID').value,symbol:$('#testnetSymbol').value,side:$('#testnetSide').value,type:$('#testnetType').value,quantity:$('#testnetQty').value,reduce_only:$('#testnetReduce').value==='true'};
+ if($('#testnetPrice').value.trim())data.price=$('#testnetPrice').value.trim();if($('#testnetTrigger').value.trim())data.trigger_price=$('#testnetTrigger').value.trim();
+ if(!confirm(`Queue ${data.side} ${data.quantity} ${data.symbol} as ${data.type} on ${data.account}? This creates an actual order in the EXCHANGE TEST environment.`))return;
+ try{const result=await api('/v1/testnet/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});$('#testnetNotice').textContent=`Queued intent ${result.order.id} status ${result.order.status}; awaiting worker authorization, exchange acceptance and reconciliation.`;$('#testnetClientID').value='at-'+crypto.randomUUID().slice(0,22);await updateTestnet();}catch(err){notify('#testnetNotice',err);}});
+
+$('#loginForm').addEventListener('submit',login);$('#logout').addEventListener('click',logout);
+</script></body></html>

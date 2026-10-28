@@ -1,0 +1,94 @@
+# Execute with: docker compose -f docker-compose.yml -f infrastructure/staging/docker-compose.staging.yml --env-file .env.staging up -d --build
+# Mount paths below are relative to FIRST compose file (repo root).
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    environment:
+      STAGING_HOST: ${STAGING_HOST:?Domain required}
+      ACME_EMAIL: ${ACME_EMAIL:?Email required}
+    volumes:
+      - ./infrastructure/staging/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports: ["80:80", "443:443", "443:443/udp"]
+    depends_on: [gateway]
+    networks: [internal]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,noexec,size=32m"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+  admin-bootstrap:
+    profiles: [bootstrap]
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:?Password required}@postgres:5432/trader
+      JWT_SECRET: worker-unused-only-during-enrollment-000000000000
+      ENABLE_LIVE_TRADING: "false"
+      DEPLOYMENT_MODE: development
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [internal]
+    stdin_open: true
+    tty: true
+    command: ["python","-m","trader.bootstrap_admin"]
+    restart: "no"
+  role-provisioner:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD:?Password required}@postgres:5432/trader
+      ROLE_PASSWORD_GATEWAY: ${ROLE_PASSWORD_GATEWAY:?Required}
+      ROLE_PASSWORD_COLLECTOR: ${ROLE_PASSWORD_COLLECTOR:?Required}
+      ROLE_PASSWORD_OUTBOX: ${ROLE_PASSWORD_OUTBOX:?Required}
+      ROLE_PASSWORD_PAPER: ${ROLE_PASSWORD_PAPER:?Required}
+      ROLE_PASSWORD_RESEARCH: ${ROLE_PASSWORD_RESEARCH:?Required}
+      ROLE_PASSWORD_EXCHANGE: ${ROLE_PASSWORD_EXCHANGE:?Required}
+      ROLE_PASSWORD_OPERATIONS: ${ROLE_PASSWORD_OPERATIONS:?Required}
+    volumes:
+      - ./scripts/ops/provision_roles.py:/app/provision_roles.py:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [internal]
+    command: ["python","/app/provision_roles.py"]
+    restart: "no"
+  gateway:
+    environment:
+      DATABASE_URL: postgresql://trader_gateway:${ROLE_PASSWORD_GATEWAY:?Required}@postgres:5432/trader
+      STAGING_DB_ROLE: trader_gateway
+      STAGING_HOST: ${STAGING_HOST:?Required}
+      TRUSTED_TLS_PROXY: "true"
+      DEPLOYMENT_MODE: staging
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  paper-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_paper:${ROLE_PASSWORD_PAPER:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  research-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_research:${ROLE_PASSWORD_RESEARCH:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  exchange-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_exchange:${ROLE_PASSWORD_EXCHANGE:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  collector:
+    environment:
+      DATABASE_URL: postgresql://trader_collector:${ROLE_PASSWORD_COLLECTOR:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  outbox:
+    environment:
+      DATABASE_URL: postgresql://trader_outbox:${ROLE_PASSWORD_OUTBOX:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+  operations-worker:
+    environment:
+      DATABASE_URL: postgresql://trader_operations:${ROLE_PASSWORD_OPERATIONS:?Required}@postgres:5432/trader
+    depends_on:
+      role-provisioner: {condition: service_completed_successfully}
+volumes:
+  caddy_data:
+  caddy_config:
