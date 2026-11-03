@@ -16,7 +16,61 @@ const plain = (v) => v === null || v === undefined ? '—' : String(v);
 const money = (v) => Number.isFinite(Number(v)) ? Number(v).toLocaleString('en-US',{maximumFractionDigits:4}) : '—';
 const smallId = (v) => String(v || '—').slice(0,9);
 const stamp = (v) => v ? new Date(v).toLocaleString() : '—';
-function announce(message, selector='#globalMessage'){$(selector).textContent=plain(message);}
+const latestPrices = { BTCUSDT: 65000, ETHUSDT: 3500 };
+function showToast(message, type = 'info', duration = 5000) {
+  const container = $('#toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+
+  const textWrap = document.createElement('div');
+  textWrap.style.flex = '1';
+  textWrap.textContent = plain(message);
+  toast.append(textWrap);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'toast-close';
+  closeBtn.setAttribute('aria-label', 'Close notification');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.onclick = () => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => toast.remove(), 250);
+  };
+  toast.append(closeBtn);
+
+  container.append(toast);
+  if (duration > 0) {
+    setTimeout(() => {
+      if (toast.isConnected) {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 250);
+      }
+    }, duration);
+  }
+}
+function announce(message, selector = '#globalMessage', type = null) {
+  const text = plain(message);
+  const target = $(selector);
+  if (target) target.textContent = text;
+
+  let toastType = type;
+  if (!toastType) {
+    const lower = text.toLowerCase();
+    if (lower.includes('reject') || lower.includes('fail') || lower.includes('error') || lower.includes('invalid') || lower.includes('denied') || lower.includes('decaying') || lower.includes('halt') || lower.includes('disarm')) {
+      toastType = 'danger';
+    } else if (lower.includes('success') || lower.includes('created') || lower.includes('approved') || lower.includes('enqueued') || lower.includes('demoted') || lower.includes('armed') || lower.includes('active')) {
+      toastType = 'success';
+    } else if (lower.includes('warn') || lower.includes('review') || lower.includes('pending') || lower.includes('confirm') || lower.includes('standby')) {
+      toastType = 'warning';
+    } else {
+      toastType = 'info';
+    }
+  }
+  showToast(text, toastType);
+}
 function logout(message='Session ended') {bearer=null;clearInterval(timer);$('#app').classList.add('hidden');$('#auth').classList.remove('hidden');$('#password').value='';$('#otp').value='';announce(message,'#authNotice');}
 async function api(path, options={}) {
   if (!bearer) throw new Error('Sign in first');
@@ -307,6 +361,7 @@ async function loadOverview(){
   const status=(name)=>{const row=streams.streams.find(x=>x.market===name);return row&&row.connected&&(Date.now()-row.last_event_ts)<30000?'HEALTHY':'STALE';};
   $('#spotFeed').textContent=status('spot');
   $('#futureFeed').textContent=status('futures');
+  updateFeedHeartbeat(streams);
   $('#paperCount').textContent=papers.accounts.length;
   $('#approvalCount').textContent=approvals.requests.filter(x=>x.status==='PENDING').length;
   $('#regime').textContent=history.regime||'Insufficient bars';
@@ -325,6 +380,14 @@ async function loadOverview(){
   $('#overviewChartNote').textContent=overviewBars.length+' closed imported bars · '+(history.fresh?'recent':'may be stale');
   $('#safetyState').textContent=sandbox.accounts.map(a=>`${a.code}: ${a.state} · ${a.operator_enabled?'ARMED':'DISARMED'}`).join('\n')||'No test accounts initialized';
   table('#marketRows',events.events,(tr,x)=>{const p=x.payload||{};[x.market,x.symbol,x.event_type,p.best_bid||p.close||p.mark_price||p.price||'—',Math.round(x.age_ms/1000)+'s',x.stale?'STALE':'OK'].forEach(z=>td(tr,z));});
+  for (const x of events.events || []) {
+    const p = x.payload || {};
+    const price = parseFloat(p.best_bid || p.close || p.mark_price || p.price);
+    if (price > 0 && x.symbol) {
+      latestPrices[x.symbol.toUpperCase()] = price;
+    }
+  }
+  updateAllTicketNotionals();
   $('#lastRefresh').textContent='Last updated '+new Date().toLocaleTimeString();
 }
 document.addEventListener('focusin', e => {
@@ -349,6 +412,14 @@ async function loadChart() {
   $('#chartFresh').textContent = candlesRes.fresh ? 'Recent imported bars' : 'Historical / stale';
 
   const events = marketRes.events || [];
+  for (const x of events) {
+    const p = x.payload || {};
+    const price = parseFloat(p.best_bid || p.close || p.mark_price || p.price);
+    if (price > 0 && x.symbol) {
+      latestPrices[x.symbol.toUpperCase()] = price;
+    }
+  }
+  updateAllTicketNotionals();
   const ticker = events.find(e => e.event_type === 'book_ticker');
   const depth = events.find(e => e.event_type === 'depth20');
   const mark = events.find(e => e.event_type === 'mark_price');
@@ -628,4 +699,150 @@ $('#liveProposal').addEventListener('submit',async e=>{
   catch(err){announce(err.message,'#liveMessage');}
 });
 
-async function loadPage(){if(!bearer)return;const actions={overview:loadOverview,trading:loadChart,portfolio:loadPortfolio,sandbox:loadSandbox,approvals:loadApprovals,research:loadResearch,live:loadLive,operations:loadOperations};await actions[page]();}
+function updateFeedHeartbeat(streams) {
+  const topbar = $('#topbarFeeds');
+  if (!topbar) return;
+  const list = streams?.streams || [];
+  const now = Date.now();
+  const allHealthy = list.length > 0 && list.every(s => s.connected && s.last_event_ts && (now - s.last_event_ts < 30000));
+  if (allHealthy) {
+    topbar.className = 'chip safe';
+    topbar.textContent = '● FEEDS: CONNECTED';
+  } else {
+    topbar.className = 'chip danger';
+    topbar.textContent = '⚠ FEEDS: DEGRADED';
+  }
+}
+
+function updateTicketNotional(formId, estId, chipId, hintId) {
+  const form = $('#' + formId);
+  if (!form) return;
+  const d = fieldData(form);
+  const qty = parseFloat(d.quantity) || 0;
+  const sym = (d.symbol || 'BTCUSDT').toUpperCase();
+  let price = 0;
+  if (d.type === 'LIMIT' && (d.limit_price || d.price)) {
+    price = parseFloat(d.limit_price || d.price) || 0;
+  }
+  if (price <= 0) {
+    price = latestPrices[sym] || (sym.startsWith('ETH') ? 3500 : 65000);
+  }
+  const notional = qty * price;
+  const estEl = $('#' + estId);
+  const chipEl = $('#' + chipId);
+  const hintEl = $('#' + hintId);
+  if (!estEl || !chipEl || !hintEl) return;
+
+  if (qty <= 0) {
+    estEl.textContent = '— USDT';
+    chipEl.className = 'chip';
+    chipEl.textContent = 'AWAITING QTY';
+    hintEl.textContent = 'Min: 5 USDT · Hard Cap: 100 USDT';
+    return;
+  }
+
+  estEl.textContent = `~${notional.toFixed(2)} USDT`;
+  if (notional < 5.0) {
+    chipEl.className = 'chip danger';
+    chipEl.textContent = 'UNDER MIN ($5)';
+    hintEl.textContent = `Binance rejects orders < 5.00 USDT (Est. price: ${money(price)})`;
+  } else if (notional > 100.0) {
+    chipEl.className = 'chip danger';
+    chipEl.textContent = 'EXCEEDS CANARY CAP ($100)';
+    hintEl.textContent = `Hard safety cap is 100 USDT (Est. price: ${money(price)})`;
+  } else {
+    chipEl.className = 'chip safe';
+    chipEl.textContent = 'WITHIN LIMITS';
+    hintEl.textContent = `Estimated @ ${money(price)} USDT/unit`;
+  }
+}
+
+function updateAllTicketNotionals() {
+  updateTicketNotional('paperOrder', 'paperEstNotional', 'paperRiskChip', 'paperRiskHint');
+  updateTicketNotional('sandboxOrder', 'sandboxEstNotional', 'sandboxRiskChip', 'sandboxRiskHint');
+  updateTicketNotional('liveProposal', 'liveEstNotional', 'liveRiskChip', 'liveRiskHint');
+}
+
+function applyQuickSize(formId, targetNotional) {
+  const form = $('#' + formId);
+  if (!form) return;
+  const d = fieldData(form);
+  const sym = (d.symbol || 'BTCUSDT').toUpperCase();
+  let price = 0;
+  if (d.type === 'LIMIT' && (d.limit_price || d.price)) {
+    price = parseFloat(d.limit_price || d.price) || 0;
+  }
+  if (price <= 0) {
+    price = latestPrices[sym] || (sym.startsWith('ETH') ? 3500 : 65000);
+  }
+  if (price > 0) {
+    const rawQty = targetNotional / price;
+    const decimals = sym.startsWith('BTC') ? 4 : 3;
+    const factor = Math.pow(10, decimals);
+    const quantized = Math.max(1 / factor, Math.floor(rawQty * factor) / factor);
+    const qtyInput = form.querySelector('input[name="quantity"]');
+    if (qtyInput) {
+      qtyInput.value = quantized.toFixed(decimals);
+      qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.quick-size-btn');
+  if (!btn) return;
+  const formId = btn.dataset.target;
+  const notional = parseFloat(btn.dataset.notional) || 15;
+  if (formId) applyQuickSize(formId, notional);
+});
+
+['paperOrder', 'sandboxOrder', 'liveProposal'].forEach(id => {
+  const f = $('#' + id);
+  if (f) {
+    f.addEventListener('input', updateAllTicketNotionals);
+    f.addEventListener('change', updateAllTicketNotionals);
+  }
+});
+
+const liveKind = $('#liveKind');
+if (liveKind) {
+  const syncLiveExtras = () => {
+    const extras = $('#liveOrderExtras');
+    if (extras) extras.style.display = liveKind.value.endsWith('_ORDER') ? 'block' : 'none';
+  };
+  liveKind.addEventListener('change', syncLiveExtras);
+  syncLiveExtras();
+}
+
+$('#topbarHalt')?.addEventListener('click', async () => {
+  if (!confirm('GLOBAL EMERGENCY HALT:\n\nImmediately halt new entries across SPOT and FUTURES live accounts and cancel queued opening orders?\n\nExisting open positions on Binance will remain active.')) return;
+  try {
+    const results = await Promise.allSettled([
+      post('/v1/live/accounts/spot-live/halt'),
+      post('/v1/live/accounts/futures-live/halt')
+    ]);
+    const ok = results.filter(r => r.status === 'fulfilled').length;
+    announce(`Global emergency halt executed (${ok}/2 accounts confirmed). New entries disabled across live accounts.`, '#globalMessage', 'danger');
+    if (page === 'live') await loadLive();
+  } catch (err) {
+    announce('Emergency halt failed: ' + err.message, '#globalMessage', 'danger');
+  }
+});
+
+updateAllTicketNotionals();
+
+async function loadPage() {
+  if (!bearer) return;
+  const actions = {
+    overview: loadOverview,
+    trading: loadChart,
+    portfolio: loadPortfolio,
+    sandbox: loadSandbox,
+    approvals: loadApprovals,
+    research: loadResearch,
+    live: loadLive,
+    operations: loadOperations
+  };
+  api('/v1/market/streams').then(updateFeedHeartbeat).catch(() => {});
+  await actions[page]();
+}
