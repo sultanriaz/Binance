@@ -56,6 +56,25 @@ async def active_model(request: Request, claims: Annotated[dict, Depends(admin)]
     active = await repo.get_active_canary(market=market, symbol=symbol)
     if not active:
         return {'active_model': None, 'message': 'No model currently active in CANARY_ACTIVE'}
+
+    drift_incident = None
+    try:
+        async with request.app.state.db.pool.connection() as conn:
+            inc_row = await (await conn.execute('''
+                SELECT id, category, detail, raised_at FROM live_incidents
+                WHERE category='CONCEPT_DRIFT_INTERVENTION'
+                ORDER BY id DESC LIMIT 1
+            ''')).fetchone()
+            if inc_row:
+                drift_incident = {
+                    'id': inc_row[0],
+                    'category': inc_row[1],
+                    'detail': inc_row[2],
+                    'raised_at': inc_row[3].isoformat() if hasattr(inc_row[3], 'isoformat') else str(inc_row[3]),
+                }
+    except Exception:
+        pass
+
     return {
         'active_model': {
             'id': active['id'],
@@ -71,6 +90,7 @@ async def active_model(request: Request, claims: Annotated[dict, Depends(admin)]
             'win_rate_health': active.get('win_rate_health', 'WATCH'),
             'live_metrics': active.get('metrics', {}),
             'quality_pass': active.get('quality_pass', True),
+            'drift_incident': drift_incident,
         }
     }
 

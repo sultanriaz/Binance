@@ -43,6 +43,36 @@ async function api(path, options={}) {
 }
 const post=(path,body={})=>api(path,{method:'POST',body:JSON.stringify(body)});
 function td(tr,value){const el=document.createElement('td');el.textContent=plain(value);tr.append(el);return el;}
+function tdForecast(tr,attr){
+  const el=document.createElement('td');
+  if(!attr||attr.forecast_p===undefined||attr.forecast_p===null){
+    el.textContent='—';
+  }else{
+    const p=Number(attr.forecast_p);
+    const span=document.createElement('span');
+    span.className=p>=0.60?'chip safe':'chip danger';
+    span.textContent=`P(Up): ${(p*100).toFixed(1)}%`;
+    el.append(span);
+  }
+  tr.append(el);
+  return el;
+}
+function tdAttribution(tr,attr){
+  const el=document.createElement('td');
+  if(!attr){
+    el.textContent='—';
+  }else{
+    const top=attr.top_features||[];
+    if(top.length===0){
+      el.textContent='Canary Active';
+    }else{
+      el.textContent=top.map(f=>`${f[0]}: ${f[1]>0?'+':''}${Number(f[1]).toFixed(3)}`).join(' · ');
+      el.title=`Model: ${attr.model_id||'Canary'} | Forecast P(Up): ${(Number(attr.forecast_p)*100).toFixed(1)}%`;
+    }
+  }
+  tr.append(el);
+  return el;
+}
 function table(selector,rows,render){const tbody=$(selector);tbody.replaceChildren();if(!rows||rows.length===0){const tr=document.createElement('tr');const c=td(tr,'No records yet');c.colSpan=10;tbody.append(tr);return;}for(const r of rows){const tr=document.createElement('tr');render(tr,r);tbody.append(tr);}}
 function putButton(container,name,action,cls='secondary'){const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=name;b.addEventListener('click',action);container.append(b);return b;}
 function fieldData(form){return Object.fromEntries(new FormData(form).entries());}
@@ -58,13 +88,14 @@ $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const
 $('#logout').addEventListener('click',()=>logout());$('#refresh').addEventListener('click',()=>loadPage().catch(e=>announce(e.message)));
 async function candles(market='spot',symbol='BTCUSDT',interval='1m'){return api(`/v1/terminal/candles?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=250`);}
 async function loadOverview(){
-  const [streamsRes,eventsRes,papersRes,approvalsRes,historyRes,sandboxRes]=await Promise.allSettled([
+  const [streamsRes,eventsRes,papersRes,approvalsRes,historyRes,sandboxRes,canaryRes]=await Promise.allSettled([
     api('/v1/market/streams'),
     api('/v1/market/latest'),
     api('/v1/paper/accounts'),
     api('/v1/governance/requests'),
     candles(),
-    api('/v1/testnet/accounts')
+    api('/v1/testnet/accounts'),
+    api('/v1/research/models/active')
   ]);
   const streams = streamsRes.status === 'fulfilled' ? streamsRes.value : {streams: []};
   const events = eventsRes.status === 'fulfilled' ? eventsRes.value : {events: []};
@@ -72,6 +103,7 @@ async function loadOverview(){
   const approvals = approvalsRes.status === 'fulfilled' ? approvalsRes.value : {requests: []};
   const history = historyRes.status === 'fulfilled' ? historyRes.value : {bars: [], regime: 'Unavailable', fresh: false};
   const sandbox = sandboxRes.status === 'fulfilled' ? sandboxRes.value : {accounts: []};
+  const canary = canaryRes.status === 'fulfilled' ? canaryRes.value : {active_model: null};
 
   const status=(name)=>{const row=streams.streams.find(x=>x.market===name);return row&&row.connected&&(Date.now()-row.last_event_ts)<30000?'HEALTHY':'STALE';};
   $('#spotFeed').textContent=status('spot');
@@ -79,6 +111,16 @@ async function loadOverview(){
   $('#paperCount').textContent=papers.accounts.length;
   $('#approvalCount').textContent=approvals.requests.filter(x=>x.status==='PENDING').length;
   $('#regime').textContent=history.regime||'Insufficient bars';
+
+  if (canary.active_model) {
+    const m = canary.active_model;
+    const wr = m.realized_win_rate !== null && m.realized_win_rate !== undefined ? `${(Number(m.realized_win_rate)*100).toFixed(1)}%` : '—';
+    const brier = m.rolling_brier !== null && m.rolling_brier !== undefined ? Number(m.rolling_brier).toFixed(4) : '—';
+    $('#overviewCanaryStatus').textContent = `Model: ${smallId(m.id)} (${m.market}:${m.symbol})\nStatus: ${m.status} · Win Rate: ${wr}\nRolling Brier: ${brier} · Watchdog: ${m.win_rate_health}`;
+  } else {
+    $('#overviewCanaryStatus').textContent = 'No active canary model. Deterministic fallback active.';
+  }
+
   overviewBars=history.bars||[];
   renderCandles($('#overviewChart'),overviewBars);
   $('#overviewChartNote').textContent=overviewBars.length+' closed imported bars · '+(history.fresh?'recent':'may be stale');
@@ -93,7 +135,7 @@ document.addEventListener('focusin', e => {
 });
 async function loadChart(){const [m,q]=await Promise.all([candles($('#chartMarket').value,$('#chartSymbol').value,$('#chartInterval').value),api(`/v1/market/latest?market=${$('#chartMarket').value}&symbol=${$('#chartSymbol').value}`)]);chartBars=m.bars;renderCandles($('#tradingChart'),chartBars);$('#chartNote').textContent=`${m.bars.length} imported closed candles · ${m.source}`;$('#marketRegime').textContent=m.regime||'Insufficient history';$('#chartFresh').textContent=m.fresh?'Recent imported bars':'Historical / stale';const ticker=q.events.find(e=>e.event_type==='book_ticker');if(ticker){$('#lastPrice').textContent=money(ticker.payload.best_bid);$('#quoteAge').textContent='Best bid · '+Math.round(ticker.age_ms/1000)+'s old · '+(ticker.stale?'STALE':'recent');}else{$('#lastPrice').textContent='—';$('#quoteAge').textContent='No public best-bid observation';}}
 for(const x of ['chartMarket','chartSymbol','chartInterval'])$('#'+x).addEventListener('change',()=>loadChart().catch(e=>announce(e.message)));
-async function loadPortfolio(){const d=await api('/v1/paper/accounts');const sel=$('#paperSelect');const keep=sel.value;sel.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent='Choose paper account';sel.append(empty);for(const a of d.accounts){const o=document.createElement('option');o.value=a.id;o.textContent=a.name+' · '+smallId(a.id);sel.append(o);}sel.value=d.accounts.some(a=>a.id===keep)?keep:(d.accounts[0]?.id||'');if(!sel.value){$('#paperInfo').textContent='Create a virtual account to begin';table('#paperOrders',[],()=>{});return;}const record=await api('/v1/paper/accounts/'+sel.value);const a=record.account;$('#paperInfo').textContent=`Cash: ${money(a.cash)} virtual USDT\nEquity: ${money(record.equity)}\nGross exposure: ${money(record.gross_exposure)}\nPaused: ${a.paused}\nSpot: ${JSON.stringify(a.spot)}\nFutures: ${JSON.stringify(a.futures)}`;table('#paperOrders',(a.orders||[]).slice(-25).reverse(),(tr,o)=>[o.market,o.symbol,o.side,o.type,o.status,o.filled].forEach(x=>td(tr,x)));}
+async function loadPortfolio(){const d=await api('/v1/paper/accounts');const sel=$('#paperSelect');const keep=sel.value;sel.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent='Choose paper account';sel.append(empty);for(const a of d.accounts){const o=document.createElement('option');o.value=a.id;o.textContent=a.name+' · '+smallId(a.id);sel.append(o);}sel.value=d.accounts.some(a=>a.id===keep)?keep:(d.accounts[0]?.id||'');if(!sel.value){$('#paperInfo').textContent='Create a virtual account to begin';table('#paperOrders',[],()=>{});return;}const record=await api('/v1/paper/accounts/'+sel.value);const a=record.account;$('#paperInfo').textContent=`Cash: ${money(a.cash)} virtual USDT\nEquity: ${money(record.equity)}\nGross exposure: ${money(record.gross_exposure)}\nPaused: ${a.paused}\nSpot: ${JSON.stringify(a.spot)}\nFutures: ${JSON.stringify(a.futures)}`;table('#paperOrders',(a.orders||[]).slice(-25).reverse(),(tr,o)=>{td(tr,o.market);td(tr,o.symbol);td(tr,o.side);td(tr,o.type);td(tr,o.status);tdForecast(tr,o.ai_attribution);tdAttribution(tr,o.ai_attribution);td(tr,o.filled);});}
 $('#paperSelect').addEventListener('change',()=>loadPortfolio().catch(e=>announce(e.message)));
 $('#paperCreate').addEventListener('submit',async e=>{e.preventDefault();try{const d=fieldData(e.target);const r=await post('/v1/paper/accounts',{name:d.name,initial_usdt:d.cash});await loadPortfolio();$('#paperSelect').value=r.account.account_id;await loadPortfolio();announce('Created a virtual account. No money transferred.','#paperMessage');}catch(err){announce(err.message,'#paperMessage');}});
 $('#paperOrder').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('#paperSelect').value;if(!id)throw new Error('Choose virtual account');const d=fieldData(e.target);const body={market:d.market,symbol:d.symbol,side:d.side,type:d.type,quantity:d.quantity,leverage:Number(d.leverage),reduce_only:d.reduce_only==='true',client_id:crypto.randomUUID()};if(d.limit_price)body.limit_price=d.limit_price;if(d.trigger_price)body.trigger_price=d.trigger_price;const result=await post(`/v1/paper/accounts/${id}/orders`,body);announce('Paper order: '+result.order.status,'#paperMessage');await loadPortfolio();}catch(err){announce(err.message,'#paperMessage');}});
@@ -106,8 +148,66 @@ async function loadApprovals(){const requests=(await api('/v1/governance/request
 $('#approvalRefresh').addEventListener('click',()=>loadApprovals().catch(e=>announce(e.message)));
 $('#researchJob').addEventListener('submit',async e=>{e.preventDefault();try{const x=fieldData(e.target);const r=await post('/v1/research/jobs',{market:x.market,symbol:x.symbol,interval:x.interval,bars:Number(x.bars),horizon:Number(x.horizon),friction_bps:Number(x.friction_bps)});announce('Training queued: '+smallId(r.id),'#researchMessage');await loadResearch();}catch(err){announce(err.message,'#researchMessage');}});
 $('#createCampaign').addEventListener('click',async()=>{try{const x=fieldData($('#researchJob'));const r=await post('/v1/research/campaigns',{market:x.market,symbol:x.symbol,interval:x.interval,bars:Number(x.bars),horizon:Number(x.horizon),friction_bps:Number(x.friction_bps),min_new_bars:250});announce('Campaign '+smallId(r.id)+' created, DISABLED by default. Enable explicitly below.','#researchMessage');await loadResearch();}catch(e){announce(e.message,'#researchMessage');}});
-async function loadResearch(){const [jobs,models,campaigns]=await Promise.all([api('/v1/research/jobs'),api('/v1/research/models'),api('/v1/research/campaigns')]);
-table('#campaignRows',campaigns.campaigns,(tr,x)=>{[smallId(x.id),x.market+':'+x.symbol,x.min_new_bars,x.enabled?'ENABLED':'DISABLED',smallId(x.last_job_id)].forEach(y=>td(tr,y));const el=td(tr,'');putButton(el,x.enabled?'Disable':'Enable',async()=>{try{await post(`/v1/research/campaigns/${x.id}/enabled`,{enabled:!x.enabled});await loadResearch();}catch(e){announce(e.message,'#researchMessage');}},x.enabled?'danger':'secondary');});table('#jobRows',jobs.jobs,(tr,x)=>[smallId(x.id),x.market,x.symbol,x.horizon,x.bars,x.state,x.error_code||smallId(x.model_id)].forEach(y=>td(tr,y)));table('#modelRows',models.models,(tr,x)=>{[smallId(x.id),x.market+':'+x.symbol,x.status,Number(x.metrics.brier).toFixed(4),Number(x.metrics.baseline_brier).toFixed(4),(100*Number(x.metrics.holdout.net_return_fraction)).toFixed(2)+'%',x.quality_pass?'PASS':'FAIL'].forEach(y=>td(tr,y));const c=td(tr,'');if(x.status==='CANDIDATE'&&x.quality_pass)putButton(c,'Request shadow',async()=>{try{const r=await post(`/v1/research/models/${x.id}/request-shadow`);announce('Model promotion approval requested: '+smallId(r.request.id),'#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});if(x.status==='SHADOW'){putButton(c,'Forecast',async()=>{try{const d=await api(`/v1/research/models/${x.id}/forecast`);announce(`${d.symbol}: ${d.signal}, probability ${(100*d.p_positive_after_cost).toFixed(1)}%; regime ${d.regime}; stale=${d.stale}. Research only.`, '#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});putButton(c,'Retire shadow',async()=>{if(!confirm('Retire this shadow model? It will stop new research observations.'))return;try{await post(`/v1/research/models/${x.id}/retire-shadow`);await loadResearch();}catch(e){announce(e.message,'#researchMessage');}},'danger');putButton(c,'Observations',async()=>{try{const d=await api(`/v1/research/models/${x.id}/shadow`);announce(d.observations.length+' shadow observations loaded, '+d.observations.filter(z=>z.resolved_net_return!==null).length+' resolved.','#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});}});}
+async function loadResearch(){
+  const [jobs,models,campaigns,canaryData]=await Promise.all([
+    api('/v1/research/jobs'),
+    api('/v1/research/models'),
+    api('/v1/research/campaigns'),
+    api('/v1/research/models/active').catch(()=>({active_model:null}))
+  ]);
+
+  const active = canaryData?.active_model;
+  if(active){
+    $('#canaryModelId').textContent = smallId(active.id);
+    $('#canaryModelId').title = active.id;
+    $('#canaryInstrument').textContent = `${(active.market||'spot').toUpperCase()} · ${active.symbol} · ${active.interval}`;
+    $('#canaryBrier').textContent = active.rolling_brier !== null && active.rolling_brier !== undefined ? Number(active.rolling_brier).toFixed(4) : '—';
+    $('#canaryWinRate').textContent = active.realized_win_rate !== null && active.realized_win_rate !== undefined ? `${(Number(active.realized_win_rate)*100).toFixed(1)}%` : '—';
+    $('#canarySamples').textContent = `Resolved trades: ${active.shadow_samples_count || 0}`;
+
+    const driftChip = $('#canaryDriftChip');
+    if(active.status === 'DECAYING'){
+      driftChip.className = 'chip danger';
+      driftChip.textContent = 'DRIFT DECAYING';
+      $('#canaryDriftDetails').textContent = active.drift_incident?.category || 'Concept drift triggered. Model retiring to cash.';
+    }else{
+      driftChip.className = 'chip safe';
+      driftChip.textContent = active.win_rate_health === 'DEGRADING' ? 'WATCH (WARN)' : 'HEALTHY';
+      $('#canaryDriftDetails').textContent = 'KS Test (p>0.01) · Page-Hinkley Active';
+    }
+
+    const btn = $('#btnDemoteCanary');
+    btn.style.display = 'inline-block';
+    btn.dataset.modelId = active.id;
+  }else{
+    $('#canaryModelId').textContent = '—';
+    $('#canaryInstrument').textContent = 'No active model';
+    $('#canaryBrier').textContent = '—';
+    $('#canaryWinRate').textContent = '—';
+    $('#canarySamples').textContent = 'Resolved trades: 0';
+    $('#canaryDriftChip').className = 'chip safe';
+    $('#canaryDriftChip').textContent = 'STANDBY';
+    $('#canaryDriftDetails').textContent = 'Awaiting shadow benchmark promotion';
+    $('#btnDemoteCanary').style.display = 'none';
+  }
+
+  if(!$('#btnDemoteCanary').dataset.bound){
+    $('#btnDemoteCanary').dataset.bound = 'true';
+    $('#btnDemoteCanary').addEventListener('click', async () => {
+      const id = $('#btnDemoteCanary').dataset.modelId;
+      if(!id) return;
+      if(!confirm(`EMERGENCY OVERRIDE: Force-demote model ${smallId(id)} to RETIRED?\n\nThis will instantly remove the model from active routing and revert execution to flat cash.`)) return;
+      try{
+        await post(`/v1/research/models/${id}/demote`);
+        announce(`Model ${smallId(id)} successfully demoted to RETIRED.`, '#researchMessage');
+        await loadResearch();
+      }catch(err){
+        announce(err.message, '#researchMessage');
+      }
+    });
+  }
+
+  table('#campaignRows',campaigns.campaigns,(tr,x)=>{[smallId(x.id),x.market+':'+x.symbol,x.min_new_bars,x.enabled?'ENABLED':'DISABLED',smallId(x.last_job_id)].forEach(y=>td(tr,y));const el=td(tr,'');putButton(el,x.enabled?'Disable':'Enable',async()=>{try{await post(`/v1/research/campaigns/${x.id}/enabled`,{enabled:!x.enabled});await loadResearch();}catch(e){announce(e.message,'#researchMessage');}},x.enabled?'danger':'secondary');});table('#jobRows',jobs.jobs,(tr,x)=>[smallId(x.id),x.market,x.symbol,x.horizon,x.bars,x.state,x.error_code||smallId(x.model_id)].forEach(y=>td(tr,y)));table('#modelRows',models.models,(tr,x)=>{[smallId(x.id),x.market+':'+x.symbol,x.status,Number(x.metrics.brier).toFixed(4),Number(x.metrics.baseline_brier).toFixed(4),(100*Number(x.metrics.holdout.net_return_fraction)).toFixed(2)+'%',x.quality_pass?'PASS':'FAIL'].forEach(y=>td(tr,y));const c=td(tr,'');if(x.status==='CANDIDATE'&&x.quality_pass)putButton(c,'Request shadow',async()=>{try{const r=await post(`/v1/research/models/${x.id}/request-shadow`);announce('Model promotion approval requested: '+smallId(r.request.id),'#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});if(x.status==='SHADOW'){putButton(c,'Forecast',async()=>{try{const d=await api(`/v1/research/models/${x.id}/forecast`);announce(`${d.symbol}: ${d.signal}, probability ${(100*d.p_positive_after_cost).toFixed(1)}%; regime ${d.regime}; stale=${d.stale}. Research only.`, '#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});putButton(c,'Retire shadow',async()=>{if(!confirm('Retire this shadow model? It will stop new research observations.'))return;try{await post(`/v1/research/models/${x.id}/retire-shadow`);await loadResearch();}catch(e){announce(e.message,'#researchMessage');}},'danger');putButton(c,'Observations',async()=>{try{const d=await api(`/v1/research/models/${x.id}/shadow`);announce(d.observations.length+' shadow observations loaded, '+d.observations.filter(z=>z.resolved_net_return!==null).length+' resolved.','#researchMessage');}catch(e){announce(e.message,'#researchMessage');}});}});}
 async function loadOperations(){const [streams,gaps,readiness,incidents]=await Promise.all([api('/v1/market/streams'),api('/v1/market/data-quality'),api('/v1/operations/readiness'),api('/v1/operations/incidents')]);$('#streamInfo').textContent=JSON.stringify(streams.streams,null,2);$('#gapInfo').textContent=JSON.stringify(gaps,null,2);const latest=readiness.assessments[0];$('#readinessState').textContent=latest?`${latest.verdict} · ${stamp(latest.evaluated_at)}\nHash: ${latest.sha256}\nReasons: ${(latest.report?.reasons||[]).join(', ')||'Human review required; no live authorization'}`:'No recorded readiness evidence';$('#operationsIncidents').textContent=JSON.stringify(incidents.incidents,null,2);}
 $('#evaluateReadiness').addEventListener('click',async()=>{try{await post('/v1/operations/evaluate');await loadOperations();announce('Readiness evidence recorded. Human review still mandatory.');}catch(e){announce(e.message);}});
 
@@ -138,7 +238,14 @@ async function loadLive(){
       },'danger');
     });
     table('#liveOrderRows',orders.orders,(tr,o)=>{
-      [o.client_order_id,o.payload?.symbol,o.payload?.side,o.source,o.status].forEach(x=>td(tr,x));
+      const attr = o.payload?.ai_attribution;
+      td(tr, o.client_order_id);
+      td(tr, o.payload?.symbol);
+      td(tr, o.payload?.side);
+      td(tr, o.source);
+      td(tr, o.status);
+      tdForecast(tr, attr);
+      tdAttribution(tr, attr);
       const cell=td(tr,'');
       if(['NEW','ACKNOWLEDGED','PARTIALLY_FILLED','QUEUED'].includes(o.status))putButton(cell,'Request cancel',async()=>{
         if(!confirm('Cancellation may race with exchange fills. It is NOT proof a position is closed.'))return;

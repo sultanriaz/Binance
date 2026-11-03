@@ -641,6 +641,7 @@ async def test_http_api_active_and_demote_routes():
         assert data['active_model']['id'] == valid_mid
         assert data['active_model']['status'] == 'CANARY_ACTIVE'
         assert data['active_model']['win_rate_health'] == 'HEALTHY'
+        assert 'drift_incident' in data['active_model']
 
         # POST /v1/research/models/{model_id}/demote
         r_demote = await client.post(f"/v1/research/models/{valid_mid}/demote", headers=headers)
