@@ -26,6 +26,16 @@ class LiveTransport(SandboxTransport):
         if abs(self.clock_offset)>5000:
             raise ExchangeError('Clock offset too large for live orders')
 
+    async def request(self, method: str, path: str, params: dict | None = None, *, signed=False, key_only=False):
+        orig_host = self.host
+        if path.startswith('/sapi/'):
+            self.host = 'https://api.binance.com'
+        try:
+            return await super().request(method, path, params, signed=signed, key_only=key_only)
+        finally:
+            self.host = orig_host
+
+
 class LiveAdapter(SandboxAdapter):
     def __init__(self, transport: LiveTransport):
         if transport.code not in LIVE_HOSTS:
@@ -42,8 +52,8 @@ class LiveAdapter(SandboxAdapter):
             if payload['type'] not in ('MARKET','LIMIT'):
                 raise ValueError('Live spot supports market and limit only')
         else:
-            if payload['type'] not in ('MARKET','STOP_MARKET'):
-                raise ValueError('Live futures supports market and protective stops only')
-            if payload['type']=='STOP_MARKET' and not payload.get('reduce_only'):
-                raise ValueError('STOP_MARKET must reduce only')
+            if payload['type'] not in ('MARKET','STOP_MARKET','TAKE_PROFIT_MARKET'):
+                raise ValueError('Live futures supports market, protective stops, and take profit only')
+            if payload['type'] in ('STOP_MARKET','TAKE_PROFIT_MARKET') and not payload.get('reduce_only'):
+                raise ValueError(f"{payload['type']} must reduce only")
         return await super().submit(payload,client_id)

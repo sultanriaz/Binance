@@ -67,6 +67,11 @@ class IncidentReview(BaseModel):
     acknowledgement: Literal['I_INDEPENDENTLY_VERIFIED_EXCHANGE_STATE']
     totp: str=Field(pattern=r'^\d{6}$')
 
+class PanicReview(BaseModel):
+    confirmation: Literal['I_CONFIRM_EMERGENCY_FLATTEN_ALL_POSITIONS']
+    totp: str=Field(pattern=r'^\d{6}$')
+
+
 @router.get('/capabilities')
 async def capabilities(claims:Annotated[dict,Depends(admin)]):
     return {'environment':'PRODUCTION','credential_location':'DEDICATED_WORKER_ONLY',
@@ -134,12 +139,45 @@ async def execute(approval_id:UUID,body:ExecuteApproval,request:Request,
                                       {'kind':p.kind,'approval_id':str(approval_id)})
     return {'result':result,'environment':'REAL_MONEY','exchange_write':'WORKER_PENDING'}
 
+@router.get('/accounts/spot-live/fee-buffer')
+async def spot_fee_buffer(request:Request, claims:Annotated[dict,Depends(admin)]):
+    repo=LiveRepository(request.app.state.db)
+    account=await repo.get_account('spot-live')
+    if not account or not account.get('snapshot'):
+        return {'sufficient_fee_buffer':False,'error':'No recent spot account snapshot available'}
+    balances=account['snapshot'].get('account',{}).get('balances',[])
+    from trader.live.risk import check_bnb_fee_buffer
+    return check_bnb_fee_buffer(balances)
+
 @router.post('/accounts/{code}/halt')
 async def halt(code:Literal['spot-live','futures-live'],request:Request,
                claims:Annotated[dict,Depends(admin)]):
     await LiveRepository(request.app.state.db).set_halt(code)
     await request.app.state.db.audit(str(claims['sub']),'live.halt','accepted',{'account':code})
     return {'halted':True,'warning':'New entries disabled. Existing positions and orders remain active.'}
+
+@router.post('/accounts/{code}/panic-flatten')
+async def panic_flatten(code:Literal['spot-live','futures-live'],body:PanicReview,request:Request,
+                        claims:Annotated[dict,Depends(admin)]):
+    await step_up(request,claims['sub'],body.totp)
+    repo=LiveRepository(request.app.state.db)
+    await repo.set_panic_halt(code)
+    await request.app.state.db.audit(str(claims['sub']),'live.panic_flatten','accepted',{'account':code})
+    from trader.live.alerts import send_alert
+    await send_alert(
+        title="EMERGENCY PANIC-FLATTEN ACTIVATED",
+        message=f"Operator {claims['sub']} triggered Tier 2 emergency panic flatten for {code}. All queued orders canceled, open exchange orders will be canceled, and positions flattened.",
+        level="CRITICAL",
+        metadata={'account':code,'operator':str(claims['sub'])}
+    )
+    return {
+        'panic_flatten_initiated':True,
+        'account':code,
+        'tier':'TIER_2_EMERGENCY_KILL_SWITCH',
+        'status':'HALTED',
+        'exchange_action':'WORKER_IMMEDIATE_CANCEL_AND_FLATTEN'
+    }
+
 
 @router.post('/accounts/{code}/orders/{intent_id}/cancel',status_code=202)
 async def cancel(code:Literal['spot-live','futures-live'],intent_id:UUID,request:Request,

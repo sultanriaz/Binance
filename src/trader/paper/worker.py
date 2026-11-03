@@ -129,13 +129,50 @@ async def run_strategies(storage:Storage) -> int:
                                        price=quote.mid,allocation=dec(allocation))
                 if intended is not None:
                     side,quantity,reduce_only=intended
-                    try:
-                        place_order(a,quote,policy,side=side,quantity=quantity,
-                            ts_ms=now_ms,reduce_only=reduce_only,
-                            client_id=f'strategy:{strategy_id}:{closed_ms}')
-                    except RiskRejected as exc:
-                        a.audit('STRATEGY_REJECTED',now_ms,strategy_id=str(strategy_id),
-                                reason=exc.reason,closed_bar_ms=closed_ms)
+                    # Alpha Gate Check for opening BUY order
+                    if side == 'BUY' and not reduce_only:
+                        try:
+                            canary = await (await conn.execute('''
+                                SELECT id, artifact FROM research_models
+                                WHERE market=%s AND symbol=%s AND status='CANARY_ACTIVE'
+                                ORDER BY promoted_at DESC LIMIT 1''', (market, symbol))).fetchone()
+                            if canary:
+                                model_id, artifact = canary
+                                from trader.intelligence.model import LinearProbabilityModel
+                                from trader.paper.history import Bar
+                                from trader.intelligence.features import make_features, extract_microstructure_context
+                                b_rows = await (await conn.execute('''SELECT open_ms, close_ms, o, h, l, c, volume
+                                    FROM historical_bars WHERE market=%s AND symbol=%s AND interval='1m' AND close_ms <= %s
+                                    ORDER BY open_ms DESC LIMIT 100''', (market, symbol, closed_ms))).fetchall()
+                                if len(b_rows) >= 25:
+                                    b_rows = list(reversed(b_rows))
+                                    bars_obj = [Bar(market, symbol, '1m', o, e, dec(o_p), dec(h_p), dec(l_p), dec(c_p), dec(v))
+                                                for o, e, o_p, h_p, l_p, c_p, v in b_rows]
+                                    depth_row = await (await conn.execute('''SELECT payload FROM market_latest
+                                        WHERE market=%s AND symbol=%s AND event_type='depth20' ''', (market, symbol))).fetchone()
+                                    ctx_row = await (await conn.execute('''SELECT payload FROM market_latest
+                                        WHERE market=%s AND symbol=%s AND event_type='book_ticker' ''', (market, symbol))).fetchone()
+                                    ctx = extract_microstructure_context(
+                                        book_ticker_payload=ctx_row[0] if ctx_row else None,
+                                        depth_payload=depth_row[0] if depth_row else None
+                                    )
+                                    model = LinearProbabilityModel.from_artifact(artifact)
+                                    feat_rows = make_features(bars_obj, context=ctx, feature_names=model.feature_names)
+                                    p_up = model.probability(feat_rows[-1])
+                                    if p_up < 0.60:
+                                        a.audit('ALPHA_MODEL_VETO', now_ms, strategy_id=str(strategy_id),
+                                                model_id=str(model_id), p_up=round(p_up, 4), reason='prob_below_60pct')
+                                        intended = None
+                        except Exception:
+                            pass
+                    if intended is not None:
+                        try:
+                            place_order(a,quote,policy,side=side,quantity=quantity,
+                                ts_ms=now_ms,reduce_only=reduce_only,
+                                client_id=f'strategy:{strategy_id}:{closed_ms}')
+                        except RiskRejected as exc:
+                            a.audit('STRATEGY_REJECTED',now_ms,strategy_id=str(strategy_id),
+                                    reason=exc.reason,closed_bar_ms=closed_ms)
                 # Atomically advance cursor with virtual order state/ledger.
                 await PaperRepository._save(conn,a,old)
                 await conn.execute('''UPDATE paper_strategies SET last_closed_bar_ms=%s

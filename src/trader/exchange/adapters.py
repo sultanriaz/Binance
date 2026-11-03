@@ -96,3 +96,76 @@ class SandboxAdapter:
 
     async def keepalive_futures_stream(self, listen_key: str):
         return await self.t.request('PUT', '/fapi/v1/listenKey', {'listenKey':listen_key}, key_only=True)
+
+    async def set_one_way_mode(self):
+        if self.market != 'futures':
+            return {'code': 200, 'msg': 'Spot market; one-way mode not applicable'}
+        from trader.exchange.transport import ExchangeError
+        try:
+            return await self.t.request('POST', '/fapi/v1/positionSide/dual', {'dualSidePosition': 'false'}, signed=True)
+        except ExchangeError as exc:
+            if exc.code == -4059 or 'No need to change' in str(exc):
+                return {'code': 200, 'msg': 'Already in one-way mode'}
+            raise
+
+    async def set_isolated_margin(self, symbol: str):
+        if self.market != 'futures':
+            return {'code': 200, 'msg': 'Spot market; margin type not applicable'}
+        from trader.exchange.transport import ExchangeError
+        try:
+            return await self.t.request('POST', '/fapi/v1/marginType', {'symbol': symbol, 'marginType': 'ISOLATED'}, signed=True)
+        except ExchangeError as exc:
+            if exc.code == -4046 or 'No need to change' in str(exc):
+                return {'code': 200, 'msg': f'{symbol} already isolated'}
+            raise
+
+    async def set_leverage(self, symbol: str, leverage: int):
+        if self.market != 'futures':
+            return {'code': 200, 'msg': 'Spot market; leverage not applicable'}
+        return await self.t.request('POST', '/fapi/v1/leverage', {'symbol': symbol, 'leverage': leverage}, signed=True)
+
+    async def leverage_brackets(self, symbol: str | None = None):
+        if self.market != 'futures':
+            return []
+        params = {'symbol': symbol} if symbol else {}
+        return await self.t.request('GET', '/fapi/v1/leverageBracket', params, signed=True)
+
+    async def funding_rate(self, symbol: str):
+        if self.market != 'futures':
+            return None
+        return await self.t.request('GET', '/fapi/v1/premiumIndex', {'symbol': symbol})
+
+    async def submit_spot_oco(self, payload: dict, client_id: str):
+        if self.market != 'spot':
+            raise ValueError('OCO orders are supported on spot only')
+        values = {
+            'symbol': payload['symbol'],
+            'side': payload['side'],
+            'quantity': payload['quantity'],
+            'price': payload['price'],
+            'stopPrice': payload['stop_price'],
+            'stopLimitPrice': payload.get('stop_limit_price', payload['stop_price']),
+            'stopLimitTimeInForce': 'GTC',
+            'listClientOrderId': client_id,
+        }
+        return await self.t.request('POST', '/api/v3/orderList/oco', values, signed=True)
+
+    async def query_dust_assets(self):
+        if self.market != 'spot':
+            return {'details': []}
+        return await self.t.request('GET', '/sapi/v1/asset/dust-btc', signed=True)
+
+    async def convert_dust_to_bnb(self, assets: list[str]):
+        if self.market != 'spot' or not assets:
+            return {'code': 200, 'msg': 'No assets to convert'}
+        return await self.t.request('POST', '/sapi/v1/asset/dust-btc', {'asset': assets}, signed=True)
+
+    async def cancel_all_symbol_orders(self, symbol: str):
+        if self.market == 'spot':
+            return await self.t.request('DELETE', '/api/v3/openOrders', {'symbol': symbol}, signed=True)
+        return await self.t.request('DELETE', '/fapi/v1/allOpenOrders', {'symbol': symbol}, signed=True)
+
+    async def get_api_restrictions(self):
+        return await self.t.request('GET', '/sapi/v1/account/apiRestrictions', signed=True)
+
+

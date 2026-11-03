@@ -6,6 +6,7 @@ import os
 import re
 
 LIVE_HOSTS = {'spot-live': 'https://api.binance.com', 'futures-live': 'https://fapi.binance.com'}
+LIVE_WS_HOSTS = {'spot-live': 'wss://ws-api.binance.com:443/ws-api/v3', 'futures-live': 'wss://fstream.binance.com'}
 
 @dataclass(frozen=True)
 class LiveSettings:

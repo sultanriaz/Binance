@@ -18,6 +18,27 @@ def D(value) -> Decimal:
     return d
 
 
+def quantize_down(value: Decimal | str, step: Decimal | str) -> Decimal:
+    """Quantize a decimal strictly down to an exact multiple of step size."""
+    v, s = D(value), D(step)
+    if s <= 0:
+        return v
+    return (v // s) * s
+
+
+def quantize_format(value: Decimal | str, step: Decimal | str) -> str:
+    """Format decimal value matching the precision/step size string."""
+    v, s = D(value), D(step)
+    if s <= 0:
+        return str(v)
+    q = (v // s) * s
+    s_str = format(s, 'f')
+    if '.' in s_str:
+        decimals = len(s_str.split('.')[1].rstrip('0'))
+        return f"{q:.{decimals}f}"
+    return str(int(q))
+
+
 def validate_order(code: str, payload: dict, info: dict, quote: dict, snapshot: dict,
                    *, symbols: tuple[str, ...], max_notional: int, max_leverage: int):
     market = 'spot' if code == 'spot-testnet' else 'futures'

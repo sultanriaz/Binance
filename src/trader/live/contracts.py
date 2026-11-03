@@ -14,6 +14,7 @@ class LiveOrder(BaseModel):
     price: str | None = None
     reduce_only: bool = False
     protective_stop: str | None = None
+    take_profit: str | None = None
 
     @model_validator(mode='after')
     def safe_shape(self):
@@ -26,15 +27,24 @@ class LiveOrder(BaseModel):
         if self.type=='MARKET' and self.price:
             raise ValueError('MARKET must not specify price')
         if self.account=='spot-live':
-            if self.reduce_only or self.protective_stop:
+            if self.reduce_only or self.protective_stop or self.take_profit:
                 raise ValueError('Spot does not accept reduce_only or futures protection')
         else:
             if self.type!='MARKET':
                 raise ValueError('Futures live canary supports only MARKET entries/exits')
-            if self.reduce_only and self.protective_stop:
-                raise ValueError('Reduce-only exit must not add a new protective order')
+            if self.reduce_only and (self.protective_stop or self.take_profit):
+                raise ValueError('Reduce-only exit must not add a new protective or take profit order')
             if not self.reduce_only and (not self.protective_stop or D(self.protective_stop)<=0):
                 raise ValueError('Mandatory futures protective stop is required for new exposure')
+            if self.take_profit is not None:
+                if D(self.take_profit)<=0:
+                    raise ValueError('Take profit price must be positive')
+                stop = D(self.protective_stop)
+                tp = D(self.take_profit)
+                if self.side=='BUY' and tp <= stop:
+                    raise ValueError('Take profit must be above protective stop for BUY')
+                if self.side=='SELL' and tp >= stop:
+                    raise ValueError('Take profit must be below protective stop for SELL')
         return self
 
 class AutomationConfig(BaseModel):

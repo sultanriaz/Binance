@@ -29,8 +29,8 @@ class UnsupportedEvent(ValueError):
 def decode(market: str, message: str | bytes, received_ts: int | None = None) -> MarketEvent:
     """Strictly normalize supported Binance WS events, preserving raw values as strings.
 
-    Book-ticker events are top-of-book only. Full L2 reconstruction is deliberately
-    out of scope of P08 and must not be inferred from the reported bid/ask.
+    Supports aggTrade, kline, markPriceUpdate, bookTicker, and depth20@100ms partial depth streams.
+    Full L2 reconstruction is out of scope; depth20 provides high-precision orderbook snapshots.
     """
     raw = json.loads(message)
     if not isinstance(raw, dict):
@@ -40,6 +40,8 @@ def decode(market: str, message: str | bytes, received_ts: int | None = None) ->
     if not isinstance(obj, dict):
         raise UnsupportedEvent("expected event object")
     symbol = str(obj.get("s", "")).upper()
+    if not symbol and stream:
+        symbol = stream.split("@")[0].upper()
     if not symbol or len(symbol) > 20:
         raise UnsupportedEvent("missing/invalid symbol")
     event = obj.get("e")
@@ -56,6 +58,14 @@ def decode(market: str, message: str | bytes, received_ts: int | None = None) ->
         kind = "mark_price"
         payload = {"mark_price": obj["p"], "index_price": obj["i"],
                    "funding_rate": obj.get("r", ""), "next_funding_ts": obj.get("T")}
+    elif ("@depth" in stream or event == "depthUpdate" or "lastUpdateId" in obj or
+          (isinstance(obj.get("b"), list) and isinstance(obj.get("a"), list)) or
+          ("bids" in obj and "asks" in obj)):
+        kind = "depth20"
+        bids = obj.get("bids") if "bids" in obj else obj.get("b", [])
+        asks = obj.get("asks") if "asks" in obj else obj.get("a", [])
+        update_id = obj.get("lastUpdateId") if "lastUpdateId" in obj else obj.get("u")
+        payload = {"bids": bids, "asks": asks, "last_update_id": update_id}
     elif ("@bookTicker" in stream or ("b" in obj and "a" in obj and "u" in obj)):
         kind = "book_ticker"
         payload = {"best_bid": obj["b"], "bid_qty": obj["B"], "best_ask": obj["a"],
@@ -77,7 +87,7 @@ def stream_names(market: str, symbols: tuple[str, ...]) -> tuple[str, ...]:
     names: list[str] = []
     for sym in symbols:
         s = sym.lower()
-        names.extend((f"{s}@aggTrade", f"{s}@kline_1m", f"{s}@bookTicker"))
+        names.extend((f"{s}@aggTrade", f"{s}@kline_1m", f"{s}@bookTicker", f"{s}@depth20@100ms"))
         if market == "futures":
             names.append(f"{s}@markPrice@1s")
     return tuple(names)

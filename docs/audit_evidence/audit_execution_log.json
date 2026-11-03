@@ -1,0 +1,306 @@
+{
+  "auditLog": [
+    {
+      "step": "Initial HTTP Status",
+      "status": "PASS",
+      "details": "HTTP 200",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.634Z"
+    },
+    {
+      "step": "CSP Header",
+      "status": "PASS",
+      "details": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.642Z"
+    },
+    {
+      "step": "X-Content-Type-Options",
+      "status": "PASS",
+      "details": "nosniff",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.642Z"
+    },
+    {
+      "step": "X-Frame-Options",
+      "status": "PASS",
+      "details": "DENY",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.642Z"
+    },
+    {
+      "step": "Referrer-Policy",
+      "status": "PASS",
+      "details": "no-referrer",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.642Z"
+    },
+    {
+      "step": "Cache-Control",
+      "status": "PASS",
+      "details": "no-store",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.643Z"
+    },
+    {
+      "step": "Auth Container State",
+      "status": "PASS",
+      "details": "Auth visible: true, App hidden: true",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:37.661Z"
+    },
+    {
+      "step": "Invalid Password Rejection",
+      "status": "PASS",
+      "details": "Notice: \"Invalid credentials or one-time code\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:38.434Z"
+    },
+    {
+      "step": "Invalid TOTP Rejection",
+      "status": "PASS",
+      "details": "Notice: \"Invalid credentials or one-time code\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:39.121Z"
+    },
+    {
+      "step": "Successful Sign-In",
+      "status": "PASS",
+      "details": "App visible: true, Session: \"ADMIN · MFA\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:40.442Z"
+    },
+    {
+      "step": "No Browser Token Storage",
+      "status": "PASS",
+      "details": "localStorage: 0, sessionStorage: 0, cookies: \"\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:40.444Z"
+    },
+    {
+      "step": "Responsive Layout [1080p_Desktop]",
+      "status": "PASS",
+      "details": "Width: 1920x1080, Horizontal overflow: false",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:40.834Z"
+    },
+    {
+      "step": "Responsive Layout [Laptop_Standard]",
+      "status": "PASS",
+      "details": "Width: 1366x768, Horizontal overflow: false",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:41.252Z"
+    },
+    {
+      "step": "Responsive Layout [Tablet_Portrait]",
+      "status": "PASS",
+      "details": "Width: 768x1024, Horizontal overflow: false",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:41.647Z"
+    },
+    {
+      "step": "Responsive Layout [Mobile_Portrait]",
+      "status": "PASS",
+      "details": "Width: 375x812, Horizontal overflow: false",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:42.014Z"
+    },
+    {
+      "step": "Overview Default Candles Defect Inspection",
+      "status": "PASS",
+      "details": "Global notice: \"\", Spot KPI: HEALTHY, Market Rows: 6",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:42.080Z"
+    },
+    {
+      "step": "Trading Terminal Page Load",
+      "status": "PASS",
+      "details": "Title: Trading Terminal",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:42.930Z"
+    },
+    {
+      "step": "Candlestick Canvas Rendering",
+      "status": "PASS",
+      "details": "Canvas dimensions valid",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:42.930Z"
+    },
+    {
+      "step": "Trading Chart ETHUSDT (Contiguous Bars) Render",
+      "status": "PASS",
+      "details": "Note: \"250 imported closed candles · imported Binance historical_bars, closed only\", Regime: \"DISCONTINUOUS_HISTORY\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:43.970Z"
+    },
+    {
+      "step": "Virtual Account Creation",
+      "status": "PASS",
+      "details": "Message: \"Created a virtual account. No money transferred.\", Info: \"Cash: 25,000 virtual USDT Equity: 25,000 Gross exposure: 0 Paused: false Spot: {} Futures: {}\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:45.965Z"
+    },
+    {
+      "step": "Virtual Market Order Execution",
+      "status": "PASS",
+      "details": "Result: \"Paper order: FILLED\", Latest row: \"spot\tBTCUSDT\tBUY\tMARKET\tFILLED\t0.005\", Account: \"Cash: 24,613.787 virtual USDT Equity: 24,999.537 Gross exposure: 385.75 Paused: false Spot: {\"BTCUSDT\":{\"avg\":\"77165.440002000000\",\"qty\":\"0.005\"}} Futures: {}\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:47.237Z"
+    },
+    {
+      "step": "Virtual Limit Order Submission",
+      "status": "PASS",
+      "details": "Result: \"Paper order: OPEN\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:48.619Z"
+    },
+    {
+      "step": "Paper Risk Check (Oversized Order Rejection)",
+      "status": "PASS",
+      "details": "Rejection response: \"Paper order rejected: MAX_ORDER_NOTIONAL\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:49.466Z"
+    },
+    {
+      "step": "Paper Account Pause",
+      "status": "PASS",
+      "details": "State: \"Cash: 24,613.787 virtual USDT Equity: 24,999.547 Gross exposure: 385.76 Paused: true Spot: {\"BTCUSDT\":{\"avg\":\"77165.440002000000\",\"qty\":\"0.005\"}} Futures: {}\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:50.080Z"
+    },
+    {
+      "step": "Paper Order Rejection When Paused",
+      "status": "PASS",
+      "details": "Notice: \"Paper order rejected: TRADING_PAUSED\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:50.710Z"
+    },
+    {
+      "step": "Paper Account Resume",
+      "status": "PASS",
+      "details": "State: \"Cash: 24,613.787 virtual USDT Equity: 24,999.5683 Gross exposure: 385.7813 Paused: false Spot: {\"BTCUSDT\":{\"avg\":\"77165.440002000000\",\"qty\":\"0.005\"}} Futures: {}\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:51.336Z"
+    },
+    {
+      "step": "Sandbox Capability State",
+      "status": "PASS",
+      "details": "Sandbox config verified disabled: \"Account: spot-testnet Status: UNINITIALIZED Armed: false Last reconciliation: — Sandbox execution: DISABLED Maximum notional: 50 USDT\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:52.247Z"
+    },
+    {
+      "step": "Sandbox Order Governance Request Creation",
+      "status": "PASS",
+      "details": "Message: \"Approval request 86cd678f- created. A second administrator must review it.\", Request ID prefix: 86cd678f-",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:39:53.093Z"
+    },
+    {
+      "step": "Self-Approval Rejection (Dual-Control Invariant)",
+      "status": "PASS",
+      "details": "Rejection message: \"Independent reviewer required\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:03.942Z"
+    },
+    {
+      "step": "Second Admin Authentication",
+      "status": "PASS",
+      "details": "Session: ADMIN · MFA",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:05.859Z"
+    },
+    {
+      "step": "Dual-Control Independent Approval",
+      "status": "PASS",
+      "details": "Approved status present in queue: true",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:34.217Z"
+    },
+    {
+      "step": "Research Lab Data Tables",
+      "status": "PASS",
+      "details": "Jobs: 1, Models in registry: 1, Campaigns: 1",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:35.154Z"
+    },
+    {
+      "step": "Recurring Campaign Creation (Disabled by Default)",
+      "status": "FAIL",
+      "details": "Notice: \"Campaign for this market/symbol/interval already exists\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:35.973Z"
+    },
+    {
+      "step": "Live Trading Safety Lock Banner",
+      "status": "PASS",
+      "details": "Banner text: \"LIVE LOCKED BY DEPLOYMENT\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:36.904Z"
+    },
+    {
+      "step": "Live Panel Access Rejection / Safety Guard",
+      "status": "PASS",
+      "details": "Account panel: \"Live operator panel locked: Live control plane is disabled by deployment policy\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:36.904Z"
+    },
+    {
+      "step": "Operations Stream Telemetry",
+      "status": "PASS",
+      "details": "Stream telemetry populated: 233 chars",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:37.825Z"
+    },
+    {
+      "step": "Operations AggTrade Gap Analysis",
+      "status": "PASS",
+      "details": "Gap telemetry populated",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:37.825Z"
+    },
+    {
+      "step": "Operations Shadow Readiness State",
+      "status": "PASS",
+      "details": "Readiness: \"NO_GO · 11/3/2026, 6:40:16 AM Hash: 73d11e58d8259b0901af2f8f8e476dbd7c67f6ed3095073a782217f1b57f9b13 Reasons: BACKUP_NOT_RECENTLY_VERIFIED, INSUFFICIENT_RESOLVED_SHADOW_TRADES, INSUFFICIENT_SHADOW_DURATION, MARKET_DATA_GAPS, OPERATIONS_INCIDENTS, SHADOW_CALIBRATION_NOT_ACCEPTABLE, STALE_SHADOW_OBSERVATIONS\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:37.825Z"
+    },
+    {
+      "step": "Record Readiness Assessment Button",
+      "status": "PASS",
+      "details": "Evaluated readiness: \"NO_GO · 11/3/2026, 6:40:37 AM Hash: 5286f06f4818888294262dedc515466cc561843f310ad138c2329ffd325d62dc Reasons: BACKUP_NOT_RECENTLY_VERIFIED, INSUFFICIENT_RESOLVED_SHADOW_TRADES, INSUFFICIENT_SHADOW_DURATION, MARKET_DATA_GAPS, OPERATIONS_INCIDENTS, SHADOW_CALIBRATION_NOT_ACCEPTABLE, STALE_SHADOW_OBSERVATIONS\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:38.847Z"
+    },
+    {
+      "step": "Legacy Terminal Page Load",
+      "status": "PASS",
+      "details": "Title: \"AegisTrade | Market, Paper & Sandbox\"",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:39.533Z"
+    },
+    {
+      "step": "Browser Console Errors",
+      "status": "PASS",
+      "details": "Total console msgs: 12, Errors: 0",
+      "screenshot": null,
+      "timestamp": "2026-11-03T01:40:39.610Z"
+    }
+  ],
+  "consoleMessages": [
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "[CONSOLE ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "[CONSOLE ERROR] Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-BLBmk9DMr54pxWABFuycshkkE6wETcHO6yu/zToAbzI='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+  ],
+  "networkErrors": []
+}

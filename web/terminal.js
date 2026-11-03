@@ -25,7 +25,19 @@ async function api(path, options={}) {
     let data;
     try {data=await response.json();} catch {data={detail:'Invalid API response'};}
     if(response.status===401){logout('Session expired. Please sign in again.');throw new Error('Session expired');}
-    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail||data));
+    if(!response.ok){
+      let msg = 'Request failed';
+      if (typeof data.detail === 'string') msg = data.detail;
+      else if (data.detail && typeof data.detail === 'object') {
+        if (data.detail.paper_order_rejected) msg = 'Paper order rejected: ' + data.detail.paper_order_rejected;
+        else msg = JSON.stringify(data.detail);
+      } else if (data.paper_order_rejected) {
+        msg = 'Paper order rejected: ' + data.paper_order_rejected;
+      } else {
+        msg = JSON.stringify(data);
+      }
+      throw new Error(msg);
+    }
     return data;
   } finally {clearTimeout(watchdog);}
 }
@@ -45,7 +57,40 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const r=await fetch('/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#user').value,password:$('#password').value,totp:$('#otp').value})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Sign in rejected');bearer=data.access_token;$('#session').textContent=data.role+' · MFA';$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');$('#password').value='';$('#otp').value='';navigate('overview');clearInterval(timer);timer=setInterval(()=>{loadPage().catch(e=>announce(e.message));},15000);}catch(err){announce(err.message,'#authNotice');}});
 $('#logout').addEventListener('click',()=>logout());$('#refresh').addEventListener('click',()=>loadPage().catch(e=>announce(e.message)));
 async function candles(market='spot',symbol='BTCUSDT',interval='1m'){return api(`/v1/terminal/candles?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=250`);}
-async function loadOverview(){const [streams,events,papers,approvals,history,sandbox]=await Promise.all([api('/v1/market/streams'),api('/v1/market/latest'),api('/v1/paper/accounts'),api('/v1/governance/requests'),candles(),api('/v1/testnet/accounts')]);const status=(name)=>{const row=streams.streams.find(x=>x.market===name);return row&&row.connected&&(Date.now()-row.last_event_ts)<30000?'HEALTHY':'STALE';};$('#spotFeed').textContent=status('spot');$('#futureFeed').textContent=status('futures');$('#paperCount').textContent=papers.accounts.length;$('#approvalCount').textContent=approvals.requests.filter(x=>x.status==='PENDING').length;$('#regime').textContent=history.regime||'Insufficient bars';overviewBars=history.bars;renderCandles($('#overviewChart'),overviewBars);$('#overviewChartNote').textContent=history.bars.length+' closed imported bars · '+(history.fresh?'recent':'may be stale');$('#safetyState').textContent=sandbox.accounts.map(a=>`${a.code}: ${a.state} · ${a.operator_enabled?'ARMED':'DISARMED'}`).join('\n')||'No test accounts initialized';table('#marketRows',events.events,(tr,x)=>{const p=x.payload||{};[x.market,x.symbol,x.event_type,p.best_bid||p.close||p.mark_price||p.price||'—',Math.round(x.age_ms/1000)+'s',x.stale?'STALE':'OK'].forEach(z=>td(tr,z));});$('#lastRefresh').textContent='Last updated '+new Date().toLocaleTimeString();}
+async function loadOverview(){
+  const [streamsRes,eventsRes,papersRes,approvalsRes,historyRes,sandboxRes]=await Promise.allSettled([
+    api('/v1/market/streams'),
+    api('/v1/market/latest'),
+    api('/v1/paper/accounts'),
+    api('/v1/governance/requests'),
+    candles(),
+    api('/v1/testnet/accounts')
+  ]);
+  const streams = streamsRes.status === 'fulfilled' ? streamsRes.value : {streams: []};
+  const events = eventsRes.status === 'fulfilled' ? eventsRes.value : {events: []};
+  const papers = papersRes.status === 'fulfilled' ? papersRes.value : {accounts: []};
+  const approvals = approvalsRes.status === 'fulfilled' ? approvalsRes.value : {requests: []};
+  const history = historyRes.status === 'fulfilled' ? historyRes.value : {bars: [], regime: 'Unavailable', fresh: false};
+  const sandbox = sandboxRes.status === 'fulfilled' ? sandboxRes.value : {accounts: []};
+
+  const status=(name)=>{const row=streams.streams.find(x=>x.market===name);return row&&row.connected&&(Date.now()-row.last_event_ts)<30000?'HEALTHY':'STALE';};
+  $('#spotFeed').textContent=status('spot');
+  $('#futureFeed').textContent=status('futures');
+  $('#paperCount').textContent=papers.accounts.length;
+  $('#approvalCount').textContent=approvals.requests.filter(x=>x.status==='PENDING').length;
+  $('#regime').textContent=history.regime||'Insufficient bars';
+  overviewBars=history.bars||[];
+  renderCandles($('#overviewChart'),overviewBars);
+  $('#overviewChartNote').textContent=overviewBars.length+' closed imported bars · '+(history.fresh?'recent':'may be stale');
+  $('#safetyState').textContent=sandbox.accounts.map(a=>`${a.code}: ${a.state} · ${a.operator_enabled?'ARMED':'DISARMED'}`).join('\n')||'No test accounts initialized';
+  table('#marketRows',events.events,(tr,x)=>{const p=x.payload||{};[x.market,x.symbol,x.event_type,p.best_bid||p.close||p.mark_price||p.price||'—',Math.round(x.age_ms/1000)+'s',x.stale?'STALE':'OK'].forEach(z=>td(tr,z));});
+  $('#lastRefresh').textContent='Last updated '+new Date().toLocaleTimeString();
+}
+document.addEventListener('focusin', e => {
+  if (e.target && (e.target.matches('input[type="text"], input[type="number"]') || (e.target.tagName === 'INPUT' && !e.target.type))) {
+    e.target.select();
+  }
+});
 async function loadChart(){const [m,q]=await Promise.all([candles($('#chartMarket').value,$('#chartSymbol').value,$('#chartInterval').value),api(`/v1/market/latest?market=${$('#chartMarket').value}&symbol=${$('#chartSymbol').value}`)]);chartBars=m.bars;renderCandles($('#tradingChart'),chartBars);$('#chartNote').textContent=`${m.bars.length} imported closed candles · ${m.source}`;$('#marketRegime').textContent=m.regime||'Insufficient history';$('#chartFresh').textContent=m.fresh?'Recent imported bars':'Historical / stale';const ticker=q.events.find(e=>e.event_type==='book_ticker');if(ticker){$('#lastPrice').textContent=money(ticker.payload.best_bid);$('#quoteAge').textContent='Best bid · '+Math.round(ticker.age_ms/1000)+'s old · '+(ticker.stale?'STALE':'recent');}else{$('#lastPrice').textContent='—';$('#quoteAge').textContent='No public best-bid observation';}}
 for(const x of ['chartMarket','chartSymbol','chartInterval'])$('#'+x).addEventListener('change',()=>loadChart().catch(e=>announce(e.message)));
 async function loadPortfolio(){const d=await api('/v1/paper/accounts');const sel=$('#paperSelect');const keep=sel.value;sel.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent='Choose paper account';sel.append(empty);for(const a of d.accounts){const o=document.createElement('option');o.value=a.id;o.textContent=a.name+' · '+smallId(a.id);sel.append(o);}sel.value=d.accounts.some(a=>a.id===keep)?keep:(d.accounts[0]?.id||'');if(!sel.value){$('#paperInfo').textContent='Create a virtual account to begin';table('#paperOrders',[],()=>{});return;}const record=await api('/v1/paper/accounts/'+sel.value);const a=record.account;$('#paperInfo').textContent=`Cash: ${money(a.cash)} virtual USDT\nEquity: ${money(record.equity)}\nGross exposure: ${money(record.gross_exposure)}\nPaused: ${a.paused}\nSpot: ${JSON.stringify(a.spot)}\nFutures: ${JSON.stringify(a.futures)}`;table('#paperOrders',(a.orders||[]).slice(-25).reverse(),(tr,o)=>[o.market,o.symbol,o.side,o.type,o.status,o.filled].forEach(x=>td(tr,x)));}
@@ -115,7 +160,7 @@ $('#liveProposal').addEventListener('submit',async e=>{
   if(d.kind.endsWith('_ORDER')){
     const account=d.kind==='SPOT_ORDER'?'spot-live':'futures-live';
     const order={account,client_order_id:'at-'+crypto.randomUUID().replaceAll('-','').slice(0,24),symbol:d.symbol,side:d.side,type:d.type,quantity:d.quantity,reduce_only:d.reduce_only==='true'};
-    if(d.price)order.price=d.price;if(d.protective_stop)order.protective_stop=d.protective_stop;
+    if(d.price)order.price=d.price;if(d.protective_stop)order.protective_stop=d.protective_stop;if(d.take_profit)order.take_profit=d.take_profit;
     p.order=order;
   }else if(d.kind==='SPOT_AUTOMATION')p.automation={symbol:d.symbol,quantity:d.quantity,fast_window:Number(d.fast_window),slow_window:Number(d.slow_window)};
   if(!confirm('This will initiate approval for a REAL MONEY capability. Review values carefully.'))return;

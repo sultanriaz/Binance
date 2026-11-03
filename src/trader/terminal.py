@@ -29,5 +29,17 @@ async def candles(request:Request,claims:Annotated[dict,Depends(authorized)],
               'fresh':bool(closed and now-closed[-1].close_ms < 3 * 60 * 1000),
               'notice':'Research candles; not an executable quote'}
     if len(closed)>=23:
-        response['regime']=regime(make_features(closed)[-1])
+        try:
+            from trader.paper.history import INTERVAL_MS
+            step = INTERVAL_MS.get(interval, 60_000)
+            start_idx = len(closed) - 1
+            while start_idx > 0 and closed[start_idx].open_ms == closed[start_idx - 1].open_ms + step:
+                start_idx -= 1
+            contiguous = closed[start_idx:]
+            if len(contiguous) >= 23:
+                response['regime'] = regime(make_features(contiguous)[-1])
+            else:
+                response['regime'] = 'DISCONTINUOUS_HISTORY'
+        except (ValueError, KeyError, IndexError):
+            response['regime'] = 'UNKNOWN_REGIME'
     return response

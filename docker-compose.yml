@@ -80,6 +80,7 @@ services:
       && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/004_intelligence.sql
       && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/005_operations.sql
       && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/006_live.sql
+      && psql -h postgres -U trader -d trader -v ON_ERROR_STOP=1 -f /migrations/007_lifecycle.sql
     depends_on:
       postgres:
         condition: service_healthy

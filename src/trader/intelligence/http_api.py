@@ -49,6 +49,32 @@ async def models(request:Request,claims:Annotated[dict,Depends(admin)]):
     return {'models':await ResearchRepo(request.app.state.db).models()}
 
 
+@router.get('/models/active')
+async def active_model(request: Request, claims: Annotated[dict, Depends(admin)],
+                       market: str | None = None, symbol: str | None = None):
+    repo = ResearchRepo(request.app.state.db)
+    active = await repo.get_active_canary(market=market, symbol=symbol)
+    if not active:
+        return {'active_model': None, 'message': 'No model currently active in CANARY_ACTIVE'}
+    return {
+        'active_model': {
+            'id': active['id'],
+            'market': active['market'],
+            'symbol': active['symbol'],
+            'interval': active['interval'],
+            'horizon': active['horizon'],
+            'status': active['status'],
+            'promoted_at': active['promoted_at'].isoformat() if hasattr(active.get('promoted_at'), 'isoformat') else active.get('promoted_at'),
+            'shadow_samples_count': active.get('shadow_samples_count', 0),
+            'rolling_brier': active.get('rolling_brier'),
+            'realized_win_rate': active.get('realized_win_rate'),
+            'win_rate_health': active.get('win_rate_health', 'WATCH'),
+            'live_metrics': active.get('metrics', {}),
+            'quality_pass': active.get('quality_pass', True),
+        }
+    }
+
+
 @router.get('/models/{model_id}/shadow')
 async def shadow(model_id:UUID,request:Request,claims:Annotated[dict,Depends(admin)]):
     repo=ResearchRepo(request.app.state.db)
@@ -119,6 +145,25 @@ async def retire(model_id:UUID,request:Request,claims:Annotated[dict,Depends(adm
                                     {'model_id':str(model_id)})
     return {'model_id':str(model_id),'status':'RETIRED'}
 
+
+@router.post('/models/{model_id}/demote')
+async def demote_model(model_id: UUID, request: Request, claims: Annotated[dict, Depends(admin)]):
+    repo = ResearchRepo(request.app.state.db)
+    model = await repo.get(str(model_id))
+    if not model:
+        raise HTTPException(404, 'Model not found')
+    if model['status'] == 'RETIRED':
+        raise HTTPException(409, 'Model is already retired')
+    success = await repo.demote_model(str(model_id), actor=str(claims['sub']))
+    if not success:
+        raise HTTPException(409, 'Model demotion failed or already retired')
+    return {
+        'model_id': str(model_id),
+        'status': 'RETIRED',
+        'demoted_by': str(claims['sub']),
+        'notice': 'Model force-demoted and removed from active/shadow rotation'
+    }
+
 @router.get('/models/{model_id}/forecast')
 async def forecast(model_id:UUID,request:Request,claims:Annotated[dict,Depends(admin)]):
     """Read-only research inference on newest imported closed bar, no trading."""
@@ -137,15 +182,36 @@ async def forecast(model_id:UUID,request:Request,claims:Annotated[dict,Depends(a
     bars=[b for b in bars if b.close_ms<now]
     if len(bars)<25 or bars[-1].open_ms<=candidate['train_data_last_ms']:
         raise HTTPException(409,'No unseen closed data since training')
+    model=LinearProbabilityModel.from_artifact(candidate['artifact'])
+    context = None
     try:
-        row=make_features(bars)[-1]
-        model=LinearProbabilityModel.from_artifact(candidate['artifact'])
+        async with request.app.state.db.pool.connection() as conn:
+            depth_row = await (await conn.execute('''SELECT payload FROM market_latest
+                WHERE market=%s AND symbol=%s AND event_type='depth20' ''',
+                (candidate['market'], candidate['symbol']))).fetchone()
+            bt_row = await (await conn.execute('''SELECT payload FROM market_latest
+                WHERE market=%s AND symbol=%s AND event_type='book_ticker' ''',
+                (candidate['market'], candidate['symbol']))).fetchone()
+            mp_row = await (await conn.execute('''SELECT payload FROM market_latest
+                WHERE market=%s AND symbol=%s AND event_type='mark_price' ''',
+                (candidate['market'], candidate['symbol']))).fetchone()
+        from trader.intelligence.features import extract_microstructure_context
+        context = extract_microstructure_context(
+            book_ticker_payload=bt_row[0] if bt_row else None,
+            mark_price_payload=mp_row[0] if mp_row else None,
+            depth_payload=depth_row[0] if depth_row else None
+        )
+    except Exception:
+        pass
+    try:
+        row=make_features(bars, context=context, feature_names=model.feature_names)[-1]
         p=model.probability(row)
     except ValueError:
         raise HTTPException(409,'Corrupt model or invalid historical bars') from None
     contributions=sorted(((name,weight*(v-mean)/scale) for name,weight,v,mean,scale
-               in zip(FEATURE_NAMES,model.weights,row.values,model.means,model.scales)),
-               key=lambda x:abs(x[1]),reverse=True)[:3]
+               in zip(model.feature_names,model.weights,row.values,model.means,model.scales)),
+               key=lambda x:abs(x[1]),reverse=True)[:5]
+
     return {'model_id':str(model_id),'market':candidate['market'],
             'symbol':candidate['symbol'],'bar_open_ms':row.open_ms,
             'p_positive_after_cost':round(p,6),

@@ -6,7 +6,14 @@ import json
 import math
 from dataclasses import dataclass
 
-from trader.intelligence.features import FEATURE_NAMES, FeatureRow
+from trader.intelligence.features import (
+    FEATURE_NAMES,
+    LEGACY_FEATURE_NAMES,
+    MICROSTRUCTURE_FEATURE_NAMES,
+    FeatureRow,
+)
+
+SUPPORTED_SCHEMAS = (LEGACY_FEATURE_NAMES, MICROSTRUCTURE_FEATURE_NAMES)
 
 
 def canonical(value: dict) -> bytes:
@@ -27,9 +34,15 @@ class LinearProbabilityModel:
     feature_names: tuple[str, ...] = FEATURE_NAMES
 
     def __post_init__(self):
-        n = len(FEATURE_NAMES)
+        if self.feature_names is None or self.feature_names == FEATURE_NAMES:
+            if len(self.weights) == len(MICROSTRUCTURE_FEATURE_NAMES):
+                object.__setattr__(self, 'feature_names', MICROSTRUCTURE_FEATURE_NAMES)
+            else:
+                object.__setattr__(self, 'feature_names', LEGACY_FEATURE_NAMES)
+        n = len(self.feature_names)
+
         if (len(self.weights) != n or len(self.means) != n or len(self.scales) != n or
-                tuple(self.feature_names) != FEATURE_NAMES):
+                tuple(self.feature_names) not in SUPPORTED_SCHEMAS):
             raise ValueError('Feature schema mismatch')
         if not (0.5 <= self.threshold <= 0.85):
             raise ValueError('Prediction threshold outside laboratory limits')
@@ -40,7 +53,7 @@ class LinearProbabilityModel:
             raise ValueError('Invalid scaler')
 
     def probability(self, row: FeatureRow) -> float:
-        if len(row.values) != len(FEATURE_NAMES):
+        if len(row.values) != len(self.feature_names):
             raise ValueError('Invalid feature row')
         z = self.intercept + sum(w * ((x - mu) / scale) for w, x, mu, scale in zip(
             self.weights, row.values, self.means, self.scales))

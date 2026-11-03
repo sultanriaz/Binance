@@ -74,6 +74,23 @@ class LiveRepository:
                     await conn.execute("""INSERT INTO live_order_events(intent_id,status,detail)
                         VALUES(%s,'CANCELED',%s)""",(id_,Jsonb({'reason':'OPERATOR_HALT'})))
 
+    async def set_panic_halt(self,code):
+        """Tier 2 Panic Kill-Switch: halts, disarms, cancels all QUEUED orders, and flags panic flatten."""
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                await conn.execute("""UPDATE live_accounts SET armed=FALSE,automation_enabled=FALSE,
+                    state='HALTED',last_error='PANIC_FLATTEN_REQUESTED',
+                    snapshot = jsonb_set(COALESCE(snapshot, '{}'::jsonb), '{panic_flatten_pending}', 'true'::jsonb),
+                    updated_at=now() WHERE code=%s""",(code,))
+                rows=await (await conn.execute("""UPDATE live_order_intents SET status='CANCELED',
+                     updated_at=now(),error='CANCELED_ON_PANIC_FLATTEN'
+                     WHERE account_code=%s AND status='QUEUED'
+                     RETURNING id""",(code,))).fetchall()
+                for (id_,) in rows:
+                    await conn.execute("""INSERT INTO live_order_events(intent_id,status,detail)
+                        VALUES(%s,'CANCELED',%s)""",(id_,Jsonb({'reason':'PANIC_FLATTEN'})))
+
+
     async def set_automation(self,approval_id,actor,config):
         payload={'account':'spot-live','config':config}
         async with self.db.pool.connection() as conn:
@@ -113,16 +130,28 @@ class LiveRepository:
                     (order_id,code,client_id,Jsonb(payload),digest(payload),approval_id))
                 await conn.execute("INSERT INTO live_order_events(intent_id,status) VALUES(%s,'QUEUED')",(order_id,))
                 if code=='futures-live' and not payload.get('reduce_only'):
-                    # Durable protective plan is created ATOMICALLY with entry intent.
+                    stop_id=str(uuid4())
+                    tp_id=str(uuid4()) if payload.get('take_profit') else None
                     protect=dict(symbol=payload['symbol'],side='SELL' if payload['side']=='BUY' else 'BUY',
                                  type='STOP_MARKET',quantity=payload['quantity'],
                                  trigger_price=payload['protective_stop'],reduce_only=True,
-                                 parent_order_id=order_id)
-                    stop_id=str(uuid4())
+                                 parent_order_id=order_id, bracket_role='STOP_LOSS',
+                                 counterpart_id=tp_id)
                     await conn.execute('''INSERT INTO live_order_intents(id,account_code,client_order_id,
                         payload,payload_sha,source) VALUES(%s,%s,%s,%s,%s,'PROTECTIVE')''',
                         (stop_id,code,'p'+client_id,Jsonb(protect),digest(protect)))
                     await conn.execute("INSERT INTO live_order_events(intent_id,status) VALUES(%s,'QUEUED')",(stop_id,))
+
+                    if tp_id:
+                        tp=dict(symbol=payload['symbol'],side='SELL' if payload['side']=='BUY' else 'BUY',
+                                type='TAKE_PROFIT_MARKET',quantity=payload['quantity'],
+                                trigger_price=payload['take_profit'],reduce_only=True,
+                                parent_order_id=order_id, bracket_role='TAKE_PROFIT',
+                                counterpart_id=stop_id)
+                        await conn.execute('''INSERT INTO live_order_intents(id,account_code,client_order_id,
+                            payload,payload_sha,source) VALUES(%s,%s,%s,%s,%s,'PROTECTIVE')''',
+                            (tp_id,code,'tp'+client_id,Jsonb(tp),digest(tp)))
+                        await conn.execute("INSERT INTO live_order_events(intent_id,status) VALUES(%s,'QUEUED')",(tp_id,))
         return {'id':order_id,'client_order_id':client_id,'status':'QUEUED'}
 
     async def has_unresolved(self,conn,code):
@@ -140,6 +169,14 @@ class LiveRepository:
                WHERE account_code=%s ORDER BY created_at,id LIMIT %s''',(code,limit))).fetchall()
         keys=('id','client_order_id','payload','status','source','exchange_order_id','cancel_requested','created_at','error')
         return [dict(zip(keys,row)) for row in rows]
+
+    async def get_order_attribution(self, order_id: str) -> dict | None:
+        async with self.db.pool.connection() as conn:
+            row = await (await conn.execute(
+                "SELECT payload->'ai_attribution' FROM live_order_intents WHERE id=%s",
+                (str(order_id),)
+            )).fetchone()
+            return row[0] if row and row[0] is not None else None
 
     async def status(self,id_,status,remote=None,err=None):
         if status not in ALL: raise ValueError('Unrecognized order status')

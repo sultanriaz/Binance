@@ -46,6 +46,19 @@ async def main():
             await t.synchronize()
             engines.append(LiveEngine(code,LiveAdapter(t),repo,config))
         if not engines:raise RuntimeError('No fingerprint-bound live credentials configured')
+        for engine in engines:
+            from trader.live.risk import verify_api_restrictions
+            await verify_api_restrictions(engine.adapter, engine.code)
+            if engine.code == 'futures-live':
+                await engine.initialize_futures_account()
+        from trader.live.streams import stream_loop
+        stream_tasks = []
+        for engine in engines:
+            task = asyncio.create_task(
+                stream_loop(engine.code, engine.adapter, repo,
+                            on_event=lambda e, eng=engine: eng.wakeup_event.set())
+            )
+            stream_tasks.append(task)
         while True:
             for engine in engines:
                 try:
@@ -62,11 +75,24 @@ async def main():
                 except Exception:
                     LOG.exception('Unexpected live worker error; disarming %s',engine.code)
                     await repo.set_halt(engine.code)
-            await asyncio.sleep(config.poll_seconds)
+            try:
+                waiters = [asyncio.create_task(e.wakeup_event.wait()) for e in engines]
+                done, pending = await asyncio.wait(waiters, timeout=config.poll_seconds, return_when=asyncio.FIRST_COMPLETED)
+                for t in pending:
+                    t.cancel()
+                for e in engines:
+                    e.wakeup_event.clear()
+            except Exception:
+                await asyncio.sleep(config.poll_seconds)
     finally:
+        for t in stream_tasks:
+            t.cancel()
+        if stream_tasks:
+            await asyncio.gather(*stream_tasks, return_exceptions=True)
         for t in transports:await t.close()
         await lock.close()
         await db.close()
+
 
 if __name__=='__main__':
     asyncio.run(main())

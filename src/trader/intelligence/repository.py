@@ -65,18 +65,22 @@ class ResearchRepo:
         async with self.db.pool.connection() as conn:
             rows=await (await conn.execute('''SELECT id,job_id,market,symbol,candle_interval,
               horizon,train_data_last_ms,metrics,quality_pass,quality_reasons,status,created_at,
-              promoted_at FROM research_models ORDER BY created_at DESC LIMIT 50''')).fetchall()
+              promoted_at,shadow_samples_count,rolling_brier,realized_win_rate
+              FROM research_models ORDER BY created_at DESC LIMIT 50''')).fetchall()
         keys=('id','job_id','market','symbol','interval','horizon','train_data_last_ms',
-              'metrics','quality_pass','quality_reasons','status','created_at','promoted_at')
+              'metrics','quality_pass','quality_reasons','status','created_at','promoted_at',
+              'shadow_samples_count','rolling_brier','realized_win_rate')
         return [dict(zip(keys,r)) for r in rows]
 
     async def get(self, id_):
         async with self.db.pool.connection() as conn:
             row=await (await conn.execute('''SELECT id,market,symbol,candle_interval,horizon,
-               train_data_last_ms,artifact,status,quality_pass FROM research_models
+               train_data_last_ms,artifact,status,quality_pass,shadow_samples_count,
+               rolling_brier,realized_win_rate,promoted_at,metrics FROM research_models
                WHERE id=%s''',(id_,))).fetchone()
         keys=('id','market','symbol','interval','horizon','train_data_last_ms',
-              'artifact','status','quality_pass')
+              'artifact','status','quality_pass','shadow_samples_count',
+              'rolling_brier','realized_win_rate','promoted_at','metrics')
         return dict(zip(keys,row)) if row else None
 
     async def shadow(self, id_):
@@ -160,3 +164,175 @@ class ResearchRepo:
              SET status='RETIRED' WHERE id=%s AND status='SHADOW'
              RETURNING id''',(id_,))).fetchone()
         return bool(row)
+
+    async def update_benchmark(self, model_id: str, count: int, rolling_brier: float, realized_win_rate: float) -> None:
+        async with self.db.pool.connection() as conn:
+            await conn.execute('''UPDATE research_models
+                SET shadow_samples_count=%s, rolling_brier=%s, realized_win_rate=%s
+                WHERE id=%s''',
+                (count, rolling_brier, realized_win_rate, model_id))
+
+    async def promote_to_canary(self, model_id: str, count: int, rolling_brier: float,
+                                realized_win_rate: float, metadata: dict | None = None) -> bool:
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                row = await (await conn.execute('''SELECT market, symbol, candle_interval, status
+                    FROM research_models WHERE id=%s FOR UPDATE''', (model_id,))).fetchone()
+                if not row or row[3] != 'SHADOW':
+                    return False
+                market, symbol, interval, _ = row
+                # Atomically retire any existing CANARY_ACTIVE model for this market/symbol/interval
+                await conn.execute('''UPDATE research_models SET status='RETIRED'
+                    WHERE market=%s AND symbol=%s AND candle_interval=%s AND status='CANARY_ACTIVE' ''',
+                    (market, symbol, interval))
+                # Promote candidate to CANARY_ACTIVE
+                await conn.execute('''UPDATE research_models
+                    SET status='CANARY_ACTIVE', promoted_at=now(),
+                        shadow_samples_count=%s, rolling_brier=%s, realized_win_rate=%s
+                    WHERE id=%s''',
+                    (count, rolling_brier, realized_win_rate, model_id))
+                audit_meta = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'shadow_samples_count': count,
+                    'rolling_brier': rolling_brier, 'realized_win_rate': realized_win_rate,
+                    **(metadata or {})
+                }
+                await self.db.audit('system:lifecycle', 'MODEL_AUTO_PROMOTED_CANARY', 'success', audit_meta)
+                return True
+
+    async def auto_retire_model(self, model_id: str, reason: str, count: int,
+                                rolling_brier: float, realized_win_rate: float,
+                                metadata: dict | None = None) -> bool:
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                row = await (await conn.execute('''SELECT market, symbol, candle_interval, status
+                    FROM research_models WHERE id=%s FOR UPDATE''', (model_id,))).fetchone()
+                if not row or row[3] in ('RETIRED',):
+                    return False
+                market, symbol, interval, prev_status = row
+                await conn.execute('''UPDATE research_models
+                    SET status='RETIRED', shadow_samples_count=%s, rolling_brier=%s, realized_win_rate=%s
+                    WHERE id=%s''',
+                    (count, rolling_brier, realized_win_rate, model_id))
+                audit_meta = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'previous_status': prev_status,
+                    'reason': reason, 'shadow_samples_count': count,
+                    'rolling_brier': rolling_brier, 'realized_win_rate': realized_win_rate,
+                    **(metadata or {})
+                }
+                await self.db.audit('system:lifecycle', 'MODEL_AUTO_RETIRED_PERFORMANCE', 'retired', audit_meta)
+                return True
+
+    async def demote_model(self, model_id: str, actor: str = 'admin') -> bool:
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                row = await (await conn.execute('''SELECT market, symbol, candle_interval, status
+                    FROM research_models WHERE id=%s FOR UPDATE''', (model_id,))).fetchone()
+                if not row or row[3] == 'RETIRED':
+                    return False
+                market, symbol, interval, prev_status = row
+                await conn.execute('''UPDATE research_models SET status='RETIRED' WHERE id=%s''', (model_id,))
+                audit_meta = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'previous_status': prev_status, 'demoted_by': actor
+                }
+                await self.db.audit(str(actor), 'research.model.demote', 'accepted', audit_meta)
+                return True
+
+    async def get_active_canary(self, market: str | None = None, symbol: str | None = None) -> dict | None:
+        query = '''SELECT id,market,symbol,candle_interval,horizon,train_data_last_ms,
+                   artifact,metrics,quality_pass,status,created_at,promoted_at,
+                   shadow_samples_count,rolling_brier,realized_win_rate
+                   FROM research_models WHERE status='CANARY_ACTIVE' '''
+        params = []
+        if market:
+            query += ' AND market=%s'
+            params.append(market)
+        if symbol:
+            query += ' AND symbol=%s'
+            params.append(symbol)
+        query += ' ORDER BY promoted_at DESC LIMIT 1'
+        async with self.db.pool.connection() as conn:
+            row = await (await conn.execute(query, tuple(params))).fetchone()
+        if not row:
+            return None
+        keys = ('id','market','symbol','interval','horizon','train_data_last_ms',
+                'artifact','metrics','quality_pass','status','created_at','promoted_at',
+                'shadow_samples_count','rolling_brier','realized_win_rate')
+        d = dict(zip(keys, row))
+        wr = d.get('realized_win_rate')
+        brier = d.get('rolling_brier')
+        if wr is not None and wr >= 0.55 and (brier is None or brier <= 0.22):
+            d['win_rate_health'] = 'HEALTHY'
+        elif (wr is not None and wr < 0.50) or (brier is not None and brier > 0.25):
+            d['win_rate_health'] = 'DEGRADING'
+        else:
+            d['win_rate_health'] = 'WATCH'
+        return d
+
+    async def mark_model_decaying(self, model_id: str, reasons: list[str]) -> bool:
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                row = await (await conn.execute(
+                    "SELECT status, market, symbol, candle_interval FROM research_models WHERE id=%s FOR UPDATE",
+                    (model_id,)
+                )).fetchone()
+                if not row or row[0] == 'RETIRED':
+                    return False
+                status, market, symbol, interval = row
+                await conn.execute(
+                    "UPDATE research_models SET status='DECAYING' WHERE id=%s",
+                    (model_id,)
+                )
+                audit_meta = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'reasons': reasons
+                }
+                await self.db.audit('system:drift_watchdog', 'MODEL_MARKED_DECAYING', 'decaying', audit_meta)
+                return True
+
+    async def retire_canary_drift(self, model_id: str, reasons: list[str]) -> bool:
+        from psycopg.types.json import Jsonb
+        async with self.db.pool.connection() as conn:
+            async with conn.transaction():
+                row = await (await conn.execute(
+                    "SELECT status, market, symbol, candle_interval FROM research_models WHERE id=%s FOR UPDATE",
+                    (model_id,)
+                )).fetchone()
+                if not row or row[0] == 'RETIRED':
+                    return False
+                status, market, symbol, interval = row
+                await conn.execute(
+                    "UPDATE research_models SET status='RETIRED' WHERE id=%s",
+                    (model_id,)
+                )
+                detail = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'reasons': reasons, 'action': 'RETIRED_TO_CASH'
+                }
+                try:
+                    await conn.execute(
+                        "INSERT INTO live_incidents(account_code, category, detail) VALUES (%s, %s, %s)",
+                        ('spot-live', 'CONCEPT_DRIFT_INTERVENTION', Jsonb(detail))
+                    )
+                except Exception:
+                    pass
+                audit_meta = {
+                    'model_id': model_id, 'market': market, 'symbol': symbol,
+                    'interval': interval, 'reasons': reasons
+                }
+                await self.db.audit('system:drift_watchdog', 'CONCEPT_DRIFT_INTERVENTION', 'retired', audit_meta)
+                return True
+
+    async def trigger_retraining_job(self, market: str, symbol: str, interval: str,
+                                     bars: int = 500, horizon: int = 1, friction_bps: float = 15.0,
+                                     actor: int = 1) -> str | None:
+        async with self.db.pool.connection() as conn:
+            busy = await (await conn.execute('''SELECT id FROM research_jobs
+                WHERE market=%s AND symbol=%s AND candle_interval=%s
+                AND state IN ('QUEUED', 'RUNNING') LIMIT 1''',
+                (market, symbol, interval))).fetchone()
+            if busy:
+                return busy[0]
+        return await self.request(actor, market, symbol, interval, bars, horizon, friction_bps)
