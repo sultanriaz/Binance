@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AegisTrade — System Architecture & Machine Learning Specifications</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 14mm 14mm;
+    @bottom-right {
+      content: counter(page);
+    }
+  }
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background: #090f1c;
+    color: #edf3ff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page {
+    page-break-after: always;
+    padding-bottom: 10px;
+  }
+  .page:last-child {
+    page-break-after: avoid;
+  }
+  .header-card {
+    background: linear-gradient(135deg, #10192d 0%, #172642 100%);
+    border: 1px solid #2a3c5e;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .header-tag {
+    display: inline-block;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #38bdf8;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 20pt;
+    font-weight: 800;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.5px;
+    color: #ffffff;
+  }
+  h1 span {
+    color: #38bdf8;
+  }
+  .header-subtitle {
+    font-size: 10pt;
+    color: #94a3b8;
+    margin: 0 0 12px 0;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    border-top: 1px solid #233454;
+    padding-top: 12px;
+    margin-top: 8px;
+  }
+  .meta-item {
+    font-size: 8pt;
+  }
+  .meta-label {
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .meta-val {
+    color: #f1f5f9;
+    font-weight: 600;
+    font-size: 9pt;
+  }
+  h2 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #38bdf8;
+    margin: 18px 0 10px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h3 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 12px 0 6px 0;
+  }
+  p {
+    margin: 0 0 10px 0;
+    color: #cbd5e1;
+    font-size: 9.5pt;
+  }
+  .diagram-container {
+    background: #0c1424;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 12px;
+    margin: 12px 0 16px 0;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+    page-break-inside: avoid;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 7.5pt;
+    font-weight: 600;
+  }
+  .badge-cyan { background: #0c2d48; color: #38bdf8; border: 1px solid #0284c7; }
+  .badge-purple { background: #2e1065; color: #c084fc; border: 1px solid #7e22ce; }
+  .badge-green { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+  .badge-red { background: #4c0519; color: #fb7185; border: 1px solid #e11d48; }
+  .badge-amber { background: #451a03; color: #fbbf24; border: 1px solid #d97706; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 8.5pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid #1e293b;
+  }
+  th {
+    background: #111c30;
+    color: #94a3b8;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 7.5pt;
+    letter-spacing: 0.5px;
+  }
+  tr:nth-child(even) td {
+    background: rgba(17, 28, 48, 0.4);
+  }
+  .code-pill {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: #141f35;
+    color: #38bdf8;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 8pt;
+  }
+  .spec-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+    page-break-inside: avoid;
+  }
+  .spec-card {
+    background: #10192d;
+    border: 1px solid #1e2d4a;
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .spec-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .formula-box {
+    background: #090e1a;
+    border-left: 3px solid #38bdf8;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 8pt;
+    color: #7dd3fc;
+  }
+  .footer {
+    border-top: 1px solid #1e293b;
+    padding-top: 8px;
+    margin-top: 14px;
+    font-size: 7.5pt;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: MASTER ARCHITECTURE -->
+<div class="page">
+  <div class="header-card">
+    <div class="header-tag">QUANTITATIVE PLATFORM SPECIFICATION</div>
+    <h1>Aegis<span>Trade</span> System Architecture</h1>
+    <div class="header-subtitle">Autonomous Model Lifecycle, L2 Microstructure Alpha & Closed-Loop Execution</div>
+    <div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">Author</div><div class="meta-val">Sultan Mehmood</div></div>
+      <div class="meta-item"><div class="meta-label">Repository</div><div class="meta-val">sultanriaz/Binance</div></div>
+      <div class="meta-item"><div class="meta-label">Architecture</div><div class="meta-val">Event-Driven Distributed</div></div>
+      <div class="meta-item"><div class="meta-label">Version</div><div class="meta-val">Modules 1–6 (Phases 1–5)</div></div>
+    </div>
+  </div>
+
+  <h2>1. Master System Architecture Flowchart</h2>
+  <p>The system orchestrates multi-market WebSocket ingestion, point-in-time feature engineering, automated model benchmarking, and dynamic Kelly-sized execution with multi-tiered risk guardrails.</p>
+
+  <div class="diagram-container">
+    <svg viewBox="0 0 940 520" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#38bdf8"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c084fc"/>
+        </marker>
+        <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#34d399"/>
+        </marker>
+        <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#fb7185"/>
+        </marker>
+        <linearGradient id="grad-card" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#131d33"/>
+          <stop offset="100%" stop-color="#0e172a"/>
+        </linearGradient>
+      </defs>
+
+      <!-- SECTION 1: INGESTION -->
+      <rect x="15" y="15" width="270" height="235" rx="8" fill="url(#grad-card)" stroke="#1e3a5f" stroke-width="1.5"/>
+      <text x="30" y="38" fill="#38bdf8" font-size="11" font-weight="700" letter-spacing="1">1. INGESTION & DATA LAYER</text>
+      
+      <rect x="30" y="55" width="240" height="42" rx="6" fill="#182744" stroke="#2563eb" stroke-width="1"/>
+      <text x="40" y="73" fill="#ffffff" font-size="10" font-weight="600">Binance WS Streams</text>
+      <text x="40" y="88" fill="#93c5fd" font-size="8.5">kline_1m, bookTicker, depth20@100ms, markPrice</text>
+
+      <rect x="30" y="110" width="240" height="38" rx="6" fill="#182744" stroke="#0284c7" stroke-width="1"/>
+      <text x="40" y="127" fill="#ffffff" font-size="10" font-weight="600">Collector Worker (asyncio)</text>
+      <text x="40" y="141" fill="#7dd3fc" font-size="8.5">Sequence validation, gap detect, envelope digest</text>
+
+      <rect x="30" y="160" width="240" height="75" rx="6" fill="#111c30" stroke="#334155" stroke-width="1"/>
+      <text x="40" y="178" fill="#e2e8f0" font-size="9" font-weight="600">Persistence & Messaging Bus</text>
+      <text x="40" y="196" fill="#38bdf8" font-size="8.5">● PostgreSQL 16: market_events, historical_bars</text>
+      <text x="40" y="211" fill="#f59e0b" font-size="8.5">● Redis 7: Market cache, rate limits, MFA keys</text>
+      <text x="40" y="225" fill="#a855f7" font-size="8.5">● NATS JetStream: Distributed event pub/sub</text>
+
+      <line x1="150" y1="97" x2="150" y2="110" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="150" y1="148" x2="150" y2="160" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <!-- SECTION 2: INTELLIGENCE ENGINE -->
+      <rect x="315" y="15" width="310" height="235" rx="8" fill="url(#grad-card)" stroke="#581c87" stroke-width="1.5"/>
+      <text x="330" y="38" fill="#c084fc" font-size="11" font-weight="700" letter-spacing="1">2. AUTONOMOUS ML INTELLIGENCE</text>
+
+      <rect x="330" y="55" width="280" height="42" rx="6" fill="#201338" stroke="#7e22ce" stroke-width="1"/>
+      <text x="340" y="73" fill="#ffffff" font-size="10" font-weight="600">Microstructure Alpha Engine</text>
+      <text x="340" y="88" fill="#d8b4fe" font-size="8.5">15 Features: OFI (Cont 2014), Depth Skew, ATR Exp</text>
+
+      <rect x="330" y="108" width="280" height="40" rx="6" fill="#201338" stroke="#9333ea" stroke-width="1"/>
+      <text x="340" y="125" fill="#ffffff" font-size="10" font-weight="600">Research Worker & Lifecycle Machine</text>
+      <text x="340" y="140" fill="#e9d5ff" font-size="8.5">CANDIDATE → SHADOW (100 trades, Brier ≤ 0.22)</text>
+
+      <rect x="330" y="160" width="135" height="44" rx="6" fill="#1c1917" stroke="#10b981" stroke-width="1"/>
+      <text x="338" y="177" fill="#34d399" font-size="9" font-weight="700">CANARY_ACTIVE</text>
+      <text x="338" y="193" fill="#a7f3d0" font-size="8">Production Alpha</text>
+
+      <rect x="475" y="160" width="135" height="44" rx="6" fill="#1c1917" stroke="#f43f5e" stroke-width="1"/>
+      <text x="483" y="177" fill="#fb7185" font-size="9" font-weight="700">Concept Drift Dog</text>
+      <text x="483" y="193" fill="#fecdd3" font-size="8">KS Test & Page-Hinkley</text>
+
+      <rect x="330" y="213" width="280" height="24" rx="4" fill="#2d131a" stroke="#be123c" stroke-width="1"/>
+      <text x="338" y="229" fill="#fda4af" font-size="8">Drift Triggered: Retires to Cash & Re-trains</text>
+
+      <line x1="270" y1="80" x2="330" y2="80" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+      <line x1="470" y1="97" x2="470" y2="108" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+      <line x1="400" y1="148" x2="400" y2="160" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+      <line x1="540" y1="148" x2="540" y2="160" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+      <line x1="540" y1="204" x2="540" y2="213" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+
+      <!-- SECTION 3: CLOSED-LOOP EXECUTION -->
+      <rect x="15" y="270" width="610" height="235" rx="8" fill="url(#grad-card)" stroke="#047857" stroke-width="1.5"/>
+      <text x="30" y="293" fill="#34d399" font-size="11" font-weight="700" letter-spacing="1">3. CLOSED-LOOP EXECUTION & RISK ENGINE</text>
+
+      <rect x="30" y="310" width="165" height="52" rx="6" fill="#0f291e" stroke="#059669" stroke-width="1"/>
+      <text x="40" y="328" fill="#ffffff" font-size="9.5" font-weight="600">Dynamic Alpha Gate</text>
+      <text x="40" y="343" fill="#6ee7b7" font-size="8.5">P(Up) ≥ 0.60 Approval</text>
+      <text x="40" y="354" fill="#a7f3d0" font-size="8">Vetoes sub-threshold trades</text>
+
+      <rect x="220" y="310" width="180" height="52" rx="6" fill="#0f291e" stroke="#10b981" stroke-width="1"/>
+      <text x="230" y="328" fill="#ffffff" font-size="9.5" font-weight="600">Quarter-Kelly Sizer</text>
+      <text x="230" y="343" fill="#6ee7b7" font-size="8.5">f* = [p*b - (1-p)] / b</text>
+      <text x="230" y="354" fill="#a7f3d0" font-size="8">Conservative 0.25x scaling</text>
+
+      <rect x="425" y="310" width="185" height="52" rx="6" fill="#2d131a" stroke="#e11d48" stroke-width="1"/>
+      <text x="435" y="328" fill="#ffffff" font-size="9.5" font-weight="600">Authoritative Risk Core</text>
+      <text x="435" y="343" fill="#fda4af" font-size="8.5">Clamped: $5 ≤ Size ≤ $100</text>
+      <text x="435" y="354" fill="#fecdd3" font-size="8">Mandatory protective stops</text>
+
+      <rect x="30" y="390" width="175" height="45" rx="6" fill="#182744" stroke="#3b82f6" stroke-width="1"/>
+      <text x="40" y="408" fill="#ffffff" font-size="9.5" font-weight="600">Virtual Paper Engine</text>
+      <text x="40" y="423" fill="#bfdbfe" font-size="8.5">Realistic fill, balance & drawdowns</text>
+
+      <rect x="225" y="390" width="180" height="45" rx="6" fill="#241b35" stroke="#8b5cf6" stroke-width="1"/>
+      <text x="235" y="408" fill="#ffffff" font-size="9.5" font-weight="600">Binance Sandbox Engine</text>
+      <text x="235" y="423" fill="#ddd6fe" font-size="8.5">Testnet order queue & sync</text>
+
+      <rect x="425" y="390" width="185" height="45" rx="6" fill="#2d171e" stroke="#f43f5e" stroke-width="1"/>
+      <text x="435" y="408" fill="#ffffff" font-size="9.5" font-weight="600">Supervised Live Engine</text>
+      <text x="435" y="423" fill="#fecdd3" font-size="8.5">Production spot/futures execution</text>
+
+      <rect x="30" y="455" width="580" height="38" rx="6" fill="#111c30" stroke="#334155" stroke-width="1"/>
+      <text x="40" y="473" fill="#e2e8f0" font-size="9" font-weight="600">Dual-Control Governance & Operational Invariants</text>
+      <text x="40" y="486" fill="#94a3b8" font-size="8">2-Admin review required for real orders. AI models cannot alter protective stops or risk thresholds.</text>
+
+      <line x1="400" y1="204" x2="112" y2="310" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+      <line x1="195" y1="336" x2="220" y2="336" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+      <line x1="400" y1="336" x2="425" y2="336" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+      <line x1="517" y1="362" x2="117" y2="390" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="517" y1="362" x2="315" y2="390" stroke="#a855f7" stroke-width="1.2" marker-end="url(#arrow-purple)"/>
+      <line x1="517" y1="362" x2="517" y2="390" stroke="#fb7185" stroke-width="1.2" marker-end="url(#arrow-red)"/>
+
+      <!-- SECTION 4: CONTROL PLANE & TERMINAL -->
+      <rect x="645" y="15" width="280" height="490" rx="8" fill="url(#grad-card)" stroke="#0284c7" stroke-width="1.5"/>
+      <text x="660" y="38" fill="#38bdf8" font-size="11" font-weight="700" letter-spacing="1">4. OPERATOR CONTROL PLANE</text>
+
+      <rect x="660" y="55" width="250" height="50" rx="6" fill="#182744" stroke="#0284c7" stroke-width="1"/>
+      <text x="670" y="73" fill="#ffffff" font-size="10" font-weight="600">FastAPI Gateway (:8000)</text>
+      <text x="670" y="88" fill="#93c5fd" font-size="8.5">JWT Auth, TOTP MFA validation, OpenAPI</text>
+      <text x="670" y="99" fill="#7dd3fc" font-size="8">Audit logging, transactional outbox</text>
+
+      <rect x="660" y="115" width="250" height="375" rx="6" fill="#111c30" stroke="#1e293b" stroke-width="1"/>
+      <text x="670" y="135" fill="#f8fafc" font-size="10.5" font-weight="700">Web Terminal UI (Tiers 1–3)</text>
+      
+      <rect x="670" y="145" width="230" height="48" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="680" y="162" fill="#38bdf8" font-size="8.5" font-weight="600">Interactive Canvas Chart</text>
+      <text x="680" y="174" fill="#94a3b8" font-size="7.8">OHLCV + SMA(8) & SMA(30) Overlays</text>
+      <text x="680" y="185" fill="#94a3b8" font-size="7.8">60fps mouse crosshair + HUD tooltip</text>
+
+      <rect x="670" y="200" width="230" height="48" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="680" y="217" fill="#34d399" font-size="8.5" font-weight="600">20-Level Depth & OFI Meter</text>
+      <text x="680" y="229" fill="#94a3b8" font-size="7.8">Real-time bid/ask ratio split bar</text>
+      <text x="680" y="240" fill="#94a3b8" font-size="7.8">Decay-weighted order flow innovations</text>
+
+      <rect x="670" y="255" width="230" height="48" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="680" y="272" fill="#f59e0b" font-size="8.5" font-weight="600">Dynamic Notional Risk Calculator</text>
+      <text x="680" y="284" fill="#94a3b8" font-size="7.8">Real-time size calculation on keystrokes</text>
+      <text x="680" y="295" fill="#94a3b8" font-size="7.8">Quick sizing: $15, $50, Max $100</text>
+
+      <rect x="670" y="310" width="230" height="48" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="680" y="327" fill="#c084fc" font-size="8.5" font-weight="600">Canary Health & Drift Card</text>
+      <text x="680" y="339" fill="#94a3b8" font-size="7.8">Rolling Brier score, realized win-rate</text>
+      <text x="680" y="350" fill="#94a3b8" font-size="7.8">1-Click Demote Override button</text>
+
+      <rect x="670" y="365" width="230" height="48" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="680" y="382" fill="#38bdf8" font-size="8.5" font-weight="600">Global Toast Notifications</text>
+      <text x="680" y="394" fill="#94a3b8" font-size="7.8">Floating non-blocking alerts (5s auto)</text>
+      <text x="680" y="405" fill="#94a3b8" font-size="7.8">Top-bar WebSocket heartbeat status</text>
+
+      <rect x="670" y="420" width="230" height="55" rx="4" fill="#3b0716" stroke="#f43f5e" stroke-width="1"/>
+      <text x="680" y="438" fill="#fda4af" font-size="9" font-weight="700">GLOBAL EMERGENCY HALT</text>
+      <text x="680" y="452" fill="#fecdd3" font-size="8">One-click disarm across all accounts</text>
+      <text x="680" y="464" fill="#fecdd3" font-size="7.5">Cancels pending queues instantly</text>
+
+      <line x1="660" y1="80" x2="625" y2="80" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="660" y1="447" x2="610" y2="447" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+    </svg>
+  </div>
+  <div class="footer">
+    <span>AegisTrade Quantitative Architecture Document · Page 1/2</span>
+    <span>Binance Trading Platform · Confidential</span>
+  </div>
+</div>
+
+<!-- PAGE 2: LIFECYCLE & TECHNICAL SPECIFICATIONS -->
+<div class="page">
+  <h2>2. Autonomous Model Lifecycle State Machine</h2>
+  <p>Models transition through an automated 5-state lifecycle governed by PostgreSQL row locks (<span class="code-pill">FOR UPDATE SKIP LOCKED</span>), verifying calibration on live unseen candles before routing real execution.</p>
+
+  <div class="diagram-container">
+    <svg viewBox="0 0 940 190" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#38bdf8"/>
+        </marker>
+        <marker id="arr2-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#f43f5e"/>
+        </marker>
+        <marker id="arr2-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10b981"/>
+        </marker>
+      </defs>
+
+      <!-- CANDIDATE -->
+      <rect x="20" y="50" width="150" height="75" rx="6" fill="#132338" stroke="#0284c7" stroke-width="1.5"/>
+      <text x="32" y="72" fill="#38bdf8" font-size="11" font-weight="700">CANDIDATE</text>
+      <text x="32" y="88" fill="#94a3b8" font-size="8">Trained Walk-Forward</text>
+      <text x="32" y="100" fill="#94a3b8" font-size="8">Brier &lt; Baseline</text>
+      <text x="32" y="112" fill="#94a3b8" font-size="8">Cost Friction Passed</text>
+
+      <!-- SHADOW -->
+      <rect x="230" y="50" width="165" height="75" rx="6" fill="#1f1838" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="242" y="72" fill="#c084fc" font-size="11" font-weight="700">SHADOW</text>
+      <text x="242" y="88" fill="#94a3b8" font-size="8">Live Forward Benchmark</text>
+      <text x="242" y="100" fill="#94a3b8" font-size="8">Unseen closed candles</text>
+      <text x="242" y="112" fill="#94a3b8" font-size="8">Zero execution risk</text>
+
+      <!-- CANARY ACTIVE -->
+      <rect x="470" y="50" width="180" height="75" rx="6" fill="#0f2b20" stroke="#10b981" stroke-width="1.5"/>
+      <text x="482" y="72" fill="#34d399" font-size="11" font-weight="700">CANARY_ACTIVE</text>
+      <text x="482" y="88" fill="#94a3b8" font-size="8">Closed-Loop Routing</text>
+      <text x="482" y="100" fill="#94a3b8" font-size="8">Kelly Sizing & Alpha Gate</text>
+      <text x="482" y="112" fill="#94a3b8" font-size="8">Monitored every 5 mins</text>
+
+      <!-- DECAYING -->
+      <rect x="720" y="15" width="190" height="65" rx="6" fill="#3d181e" stroke="#f43f5e" stroke-width="1.5"/>
+      <text x="732" y="36" fill="#fb7185" font-size="11" font-weight="700">DECAYING</text>
+      <text x="732" y="51" fill="#fca5a5" font-size="8">Drift Watchdog Triggered</text>
+      <text x="732" y="64" fill="#fca5a5" font-size="8">Flattens positions to cash</text>
+
+      <!-- RETIRED -->
+      <rect x="720" y="105" width="190" height="65" rx="6" fill="#1e222d" stroke="#64748b" stroke-width="1.5"/>
+      <text x="732" y="126" fill="#94a3b8" font-size="11" font-weight="700">RETIRED</text>
+      <text x="732" y="141" fill="#64748b" font-size="8">Archived in registry</text>
+      <text x="732" y="154" fill="#64748b" font-size="8">Replaced by new canary</text>
+
+      <!-- Transitions -->
+      <line x1="170" y1="87" x2="230" y2="87" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <text x="175" y="80" fill="#38bdf8" font-size="7.5">Dual-Approval</text>
+
+      <line x1="395" y1="87" x2="470" y2="87" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr2-green)"/>
+      <text x="403" y="76" fill="#34d399" font-size="7.5">Trades ≥ 100</text>
+      <text x="403" y="85" fill="#34d399" font-size="7">Win Rate ≥ 55%</text>
+      <text x="403" y="94" fill="#34d399" font-size="7">Brier ≤ 0.22</text>
+
+      <path d="M 312 125 L 312 155 L 720 155" fill="none" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arr2)"/>
+      <text x="430" y="150" fill="#94a3b8" font-size="7.5">Brier &gt; 0.26 OR Drawdown &gt; 8%</text>
+
+      <line x1="650" y1="70" x2="720" y2="45" stroke="#f43f5e" stroke-width="1.5" marker-end="url(#arr2-red)"/>
+      <text x="653" y="55" fill="#fb7185" font-size="7.5">KS p &lt; 0.01 / PH Error</text>
+
+      <line x1="650" y1="105" x2="720" y2="125" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <text x="653" y="125" fill="#94a3b8" font-size="7.5">Manual Demote</text>
+
+      <line x1="815" y1="80" x2="815" y2="105" stroke="#f43f5e" stroke-width="1.2" marker-end="url(#arr2-red)"/>
+
+      <path d="M 815 15 L 815 5 L 95 5 L 95 50" fill="none" stroke="#c084fc" stroke-width="1.2" stroke-dasharray="4,4" marker-end="url(#arr2)"/>
+      <text x="420" y="12" fill="#c084fc" font-size="7.5">Auto-Trigger Retraining Campaign on Regime Shift</text>
+    </svg>
+  </div>
+
+  <h2>3. Quantitative Formulations & Core Invariants</h2>
+  <div class="spec-grid">
+    <div class="spec-card">
+      <div class="spec-title">
+        <span>Order Flow Imbalance (OFI)</span>
+        <span class="badge badge-cyan">Cont et al. (2014)</span>
+      </div>
+      <p>Quantifies net buyer vs. seller liquidity innovation across 20 depth levels:</p>
+      <div class="formula-box">
+        OFI = Σ [w_i * (ΔB_i - ΔA_i)] / Denom<br>
+        where w_i = 1 / sqrt(i + 1)
+      </div>
+      <p style="font-size:8pt;color:#94a3b8;margin:0;">Bounded strictly in [-1.0, 1.0]. Captures immediate liquidity pressure.</p>
+    </div>
+
+    <div class="spec-card">
+      <div class="spec-title">
+        <span>Fractional Kelly Sizing</span>
+        <span class="badge badge-green">Conservative Sizing</span>
+      </div>
+      <p>Dynamically sizes positions according to model statistical win probability:</p>
+      <div class="formula-box">
+        f* = [p * b - (1 - p)] / b<br>
+        f_safe = 0.25 * f* (Quarter-Kelly)
+      </div>
+      <p style="font-size:8pt;color:#94a3b8;margin:0;">b = payoff ratio. Size clamped between $5 minNotional and $100 cap.</p>
+    </div>
+
+    <div class="spec-card">
+      <div class="spec-title">
+        <span>Two-Sample KS Drift Test</span>
+        <span class="badge badge-red">Concept Drift</span>
+      </div>
+      <p>Monitors empirical cumulative distribution divergence between train and live:</p>
+      <div class="formula-box">
+        D = sup | F_train(x) - F_live(x) |<br>
+        Trigger if p-value &lt; 0.01 on &gt;2 core features
+      </div>
+      <p style="font-size:8pt;color:#94a3b8;margin:0;">Evaluated every 5 minutes against the latest 50 closed candles.</p>
+    </div>
+
+    <div class="spec-card">
+      <div class="spec-title">
+        <span>Page-Hinkley Change Detector</span>
+        <span class="badge badge-amber">Error Accumulator</span>
+      </div>
+      <p>Detects abrupt structural shifts in cumulative prediction error:</p>
+      <div class="formula-box">
+        U_n = Σ (e_i - e_avg - δ)<br>
+        Trigger if (U_n - min(U_k)) &gt; λ (λ = 5.0)
+      </div>
+      <p style="font-size:8pt;color:#94a3b8;margin:0;">Instantly retires active canary models to flat cash upon regime breaks.</p>
+    </div>
+  </div>
+
+  <h2>4. Subsystem Governance & Risk Guardrails</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Subsystem</th>
+        <th>Primary Tech</th>
+        <th>Authority & Constraints</th>
+        <th>Safety Boundary</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Ingestion & Normalizer</b></td>
+        <td>Python (asyncio), WebSockets</td>
+        <td>Non-blocking stream decode, sequence gap tracking</td>
+        <td>No execution privileges; public read-only feeds</td>
+      </tr>
+      <tr>
+        <td><b>Intelligence Engine</b></td>
+        <td>scikit-learn, NumPy, SciPy</td>
+        <td>Closed-candle feature extraction, Brier benchmark</td>
+        <td>Advisory only; cannot submit orders or alter stops</td>
+      </tr>
+      <tr>
+        <td><b>Authoritative Risk</b></td>
+        <td>trader.risk (Python)</td>
+        <td>Clamps order size, max open exposure, stops</td>
+        <td>Strict veto power over both AI models and humans</td>
+      </tr>
+      <tr>
+        <td><b>Dual-Control Queue</b></td>
+        <td>FastAPI, Redis, PostgreSQL</td>
+        <td>Requires 2 independent administrators + fresh TOTP</td>
+        <td>Prevents rogue execution; approvals expire in 900s</td>
+      </tr>
+      <tr>
+        <td><b>Trading Terminal UI</b></td>
+        <td>HTML5 Canvas, Vanilla JS</td>
+        <td>Real-time depth, crosshair, dynamic notional sizing</td>
+        <td>Zero browser storage; tokens live in memory only</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>AegisTrade Quantitative Architecture Document · Page 2/2</span>
+    <span>Binance Trading Platform · Generated for Sultan Mehmood</span>
+  </div>
+</div>
+
+</body>
+</html>
