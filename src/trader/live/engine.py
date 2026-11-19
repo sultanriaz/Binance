@@ -485,7 +485,6 @@ class LiveEngine:
                     if executed_qty > 0 and str(executed_qty) != plan['payload']['quantity']:
                         plan['payload']['quantity'] = str(executed_qty)
                         async with self.repo.db.pool.connection() as conn:
-                            from psycopg.types.json import Jsonb
                             await conn.execute("""UPDATE live_order_intents
                                 SET payload = jsonb_set(payload, '{quantity}', to_jsonb(%s::text))
                                 WHERE id = %s""", (str(executed_qty), plan['id']))

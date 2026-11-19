@@ -1,40 +1,71 @@
-name: Module 6 verification
+name: CI Verification
+
 on:
   push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
 jobs:
-  unit:
+  verify:
+    name: Test & Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12 with Pip Cache
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -e '.[dev,research]'
-      - run: ruff check src tests
-      - run: python -m pytest -q
-      - run: python -m compileall -q src
-      - run: node --check web/terminal.js
-      - run: PYTHONPATH=src python scripts/ops/fault_drill.py
-  compose-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: cp .env.example .env && sed -i 's/REPLACE_WITH_A_RANDOM_SECRET_OF_32_OR_MORE_CHARACTERS/ci-only-jwt-secret-never-use-in-production-12345/' .env
-      - run: docker compose config --quiet
-      - run: |
+          cache: 'pip'
+          cache-dependency-path: 'pyproject.toml'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,research]'
+
+      - name: Static Code Analysis & Syntax Check
+        run: |
+          ruff check src tests
+          python -m compileall -q src
+          node --check web/terminal.js
+
+      - name: Run Test Suite
+        run: python -m pytest -q
+
+      - name: Run Fault & Chaos Drill
+        run: PYTHONPATH=src python scripts/ops/fault_drill.py
+
+      - name: Validate Docker Compose Staging & Live Configurations
+        run: |
+          cp .env.example .env && sed -i 's/REPLACE_WITH_A_RANDOM_SECRET_OF_32_OR_MORE_CHARACTERS/ci-only-jwt-secret-never-use-in-production-12345/' .env
+          docker compose config --quiet
           cp .env.staging.example .env.staging
           sed -i "s/REPLACE_WITH_RANDOM_48_PLUS_CHAR_SECRET/ci-only-jwt-secret-do-not-deploy-12345678912345678912345/" .env.staging
           docker compose -f docker-compose.yml -f infrastructure/staging/docker-compose.staging.yml --env-file .env.staging config --quiet
-
-  live-overlay-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          cp .env.example .env
           cp .env.production.example .env.production
           cp .env.live.example .env.live
           docker compose -f docker-compose.yml -f infrastructure/production/docker-compose.production.yml --env-file .env.production --profile live config --quiet

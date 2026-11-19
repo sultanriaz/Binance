@@ -65,7 +65,6 @@ class PaperRepository:
         For complex DB queries inside callback, instead use the worker's explicit
         transaction. This method is intended for pure account mutations only.
         """
-        from psycopg.types.json import Jsonb
         async with self.storage.pool.connection() as conn:
             async with conn.transaction():
                 row=await (await conn.execute('SELECT state,policy FROM paper_accounts WHERE id=%s FOR UPDATE',

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite, log, sqrt
-from typing import Sequence
+from typing import Any, Sequence
 
 from trader.paper.history import Bar, validate
 

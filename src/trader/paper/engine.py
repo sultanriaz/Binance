@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from trader.paper.domain import Account, Policy, Quote, ZERO, ONE, dec, ds
 from trader.paper.risk import RiskRejected, check

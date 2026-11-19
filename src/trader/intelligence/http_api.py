@@ -188,7 +188,7 @@ async def demote_model(model_id: UUID, request: Request, claims: Annotated[dict,
 async def forecast(model_id:UUID,request:Request,claims:Annotated[dict,Depends(admin)]):
     """Read-only research inference on newest imported closed bar, no trading."""
     import time
-    from trader.intelligence.features import FEATURE_NAMES, make_features, regime
+    from trader.intelligence.features import make_features, regime
     from trader.intelligence.model import LinearProbabilityModel
     from trader.paper.repository import PaperRepository
 

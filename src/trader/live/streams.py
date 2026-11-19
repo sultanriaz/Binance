@@ -92,7 +92,7 @@ async def watch_futures(adapter, repo, on_event=None):
                     LOG.critical("EXCHANGE MARGIN CALL RECEIVED: %s", event)
                     asyncio.create_task(send_alert(
                         title="BINANCE FUTURES MARGIN CALL",
-                        message=f"Critical margin call event received on futures account! Positions at extreme risk of liquidation.",
+                        message="Critical margin call event received on futures account! Positions at extreme risk of liquidation.",
                         level="CRITICAL",
                         metadata=event
                     ))
